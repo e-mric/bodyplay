@@ -46,15 +46,19 @@ hardware/              wiring notes, port pinout, BOM.csv, photos
 docs/                  plans
 ```
 
-## Dev host
+## Dev and play machines
 
-The user's PC runs **Windows**. Everything must build and run there: PlatformIO (VS Code extension or `pio` CLI), uv, PowerShell. Serial ports are `COMx`. Write helper scripts in Python, not bash. Linux support is a bonus, not a requirement.
+- **Development: macOS (Mac mini, Apple Silicon).** Code is written, built, unit-tested and flashed here: PlatformIO, uv, zsh. Serial ports look like `/dev/cu.usbmodem*`.
+- **Play: Windows PC.** Runs chiaki-ng (Remote Play) and the PC side of Tiers 0–1 (`bodyctl webcam`, dashboard, recorder). Serial ports are `COMx`.
+- So the Python package and tools must run on **both** macOS and Windows: use `pathlib`, no shell-specific scripts (write helpers in Python, not bash or PowerShell), serial ports passed as arguments.
+- The `vgamepad` backend is Windows-only; on macOS use the `dry-run` backend for development and tests.
+- From Tier 1 the node itself is a USB HID gamepad, so it works on either machine without drivers. Tier 2+ needs no PC in the hot path.
 
 ## Commands (create them in M0; keep this list current)
 
 - Firmware: `pio run -e node_belt`, `pio run -e node_wrist`, `pio run -e dongle`, `pio run -e hub`, `pio run -e <env> -t upload`, `pio test -e native`
 - PC: `uv sync`, `uv run pytest`, `uv run ruff check .`
-- Run: `uv run bodyctl webcam` (Tier 0), `uv run bodyctl device push-profile --port COM5 config/profiles/gta5.yaml` (Tier 1 node/dongle and Tier 2+ hub), `uv run bodyctl dashboard --port COM5`
+- Run: `uv run bodyctl webcam` (Tier 0), `uv run bodyctl device push-profile --port COM5 config/profiles/gta5.yaml` (Tier 1 node/dongle and Tier 2+ hub; `/dev/cu.usbmodem*` on macOS), `uv run bodyctl dashboard --port COM5`
 - Tools: `uv run bodyctl record`, `uv run bodyctl replay <trace>`, `uv run bodyctl latency-video <video.mp4>`
 
 ## Hard rules (do not break; ask before changing)

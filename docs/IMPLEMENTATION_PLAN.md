@@ -88,7 +88,7 @@ The PC validates profiles (pydantic), compiles them to a compact binary and push
 
 ### Getting inputs into chiaki-ng on Windows (Tiers 0–1)
 
-The dev host is a Windows PC. Two routes, one per tier:
+Development happens on the Mac; chiaki-ng and the Tier 0–1 PC side run on the Windows play PC. Two routes, one per tier:
 
 - **Tier 0: `vgamepad` (Python) → ViGEmBus virtual Xbox 360 pad.** ViGEmBus has been archived upstream since 2023, but its signed installer is still published and `vgamepad` installs it. chiaki-ng sees an ordinary XInput controller. Wrapped in a `VirtualGamepad` interface (`set_axis()`, `press()/release()`, a press scheduler enforcing the 30 ms hold / 30 ms release rule) with `vgamepad`, `uinput` (Linux, optional) and `dry-run` backends.
 - **Tier 1: the node is the gamepad.** The XIAO ESP32S3 has native USB, so it enumerates as a composite device: **HID gamepad** (what chiaki-ng reads) + **CDC serial** (profile push, recording, dashboard). No Python and no driver in the hot path, which also makes Tier 1 a cleaner latency story. Wired by default (a 3 m USB-C cable to the belt is fine for running in place); for wireless, a second XIAO plugged into the PC acts as an ESP-NOW → HID dongle (+€8).
@@ -98,13 +98,13 @@ The dev host is a Windows PC. Two routes, one per tier:
 
 ## M0 — Repo and foundations (Oct 25)
 
-- [ ] PlatformIO project with envs `node_belt`, `node_wrist`, `dongle`, `hub`, `native`; Arduino-ESP32 core 3.x pinned. Native tests must build on Windows (MinGW/MSVC toolchain documented in `docs/windows_setup.md`).
-- [ ] `pc/` uv project with ruff, pytest, pydantic; CLI entry point `bodyctl` (Typer or argparse). Serial ports addressed as `COMx`.
+- [ ] PlatformIO project with envs `node_belt`, `node_wrist`, `dongle`, `hub`, `native`; Arduino-ESP32 core 3.x pinned. Native tests must build on macOS (dev) and Windows (play PC).
+- [ ] `pc/` uv project with ruff, pytest, pydantic; CLI entry point `bodyctl` (Typer or argparse). Serial ports passed as arguments (`COMx` on Windows, `/dev/cu.usbmodem*` on macOS).
 - [ ] `.gitattributes` forcing LF on source, YAML and fixtures.
-- [ ] `docs/windows_setup.md`: VS Code + PlatformIO, uv, chiaki-ng install and PS5 pairing, ViGEmBus install, USB driver notes for the XIAO.
+- [ ] `docs/setup.md`: macOS dev setup (VS Code + PlatformIO, uv, flashing the XIAO) and Windows play-PC setup (uv, chiaki-ng install and PS5 pairing, ViGEmBus install, running `bodyctl` from a git checkout).
 - [ ] `lib/protocol` + Python mirror, COBS/CRC8, round-trip tests on both sides.
 - [ ] Profile schema (pydantic) that validates the starter `config/profiles/gta5.yaml`; the schema may reshape the file, but keep its port → PS5 button table.
-- [ ] CI (GitHub Actions, `windows-latest` + `ubuntu-latest`): `pio run` all envs, `pio test -e native`, `uv run pytest`, `ruff`.
+- [ ] CI (GitHub Actions, `macos-latest` + `windows-latest`): `pio run` all envs, `pio test -e native`, `uv run pytest`, `ruff`.
 - [ ] `hardware/access_port_pinout.md` copied from the design doc, including the axis-order warning.
 - [ ] **Synthetic trace generator** (`pc/bodyctl/tools/synth.py`): writes `.bptrace` files of fake IMU signals (standing still, weight shift, clean jump, jump after a long dip, run start, steady run at 1.5/2.5/3.5 steps/s, punch, noisy versions with drift and strap wobble). Lets gesture code and tests start before hardware arrives; replaced by real fixtures in M3 but kept as regression tests.
 
