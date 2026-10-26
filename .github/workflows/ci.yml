@@ -6,6 +6,7 @@ on:
 
 jobs:
   python:
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -16,13 +17,17 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
-      - run: uv sync --locked
-      - run: uv run ruff check .
-      - run: uv run ruff format --check .
-      - run: uv run pytest
-      - run: uv run bodyctl --help
+      # vgamepad's Windows source build starts an interactive driver installer.
+      # CI exercises the dry-run backend; install ViGEmBus on the play PC only.
+      - run: uv sync --locked --no-group gamepad
+      - run: uv tool install platformio
+      - run: uv run --no-group gamepad ruff check .
+      - run: uv run --no-group gamepad ruff format --check .
+      - run: uv run --no-group gamepad pytest
+      - run: uv run --no-group gamepad bodyctl --help
 
   firmware:
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
