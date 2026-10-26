@@ -1,0 +1,7 @@
+# Keep LF everywhere so Windows checkouts don't break native tests, YAML or fixtures
+* text=auto eol=lf
+*.bptrace binary
+*.png binary
+*.jpg binary
+*.mp4 binary
+*.ps1 text eol=crlf
