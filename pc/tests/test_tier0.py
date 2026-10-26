@@ -96,3 +96,46 @@ def test_dashboard_draws():
     assert img[5, 5].tolist() == [255, 255, 255]  # corner flash on this frame
     img2 = dash.draw(frame, pose, BodyState(), Report(), "on_foot", "", 30.0, 600_000)
     assert img2[5, 5].tolist() == [0, 0, 0]  # and off on the next
+
+
+@pytest.mark.parametrize("failure", ["model", "camera", "read"])
+def test_startup_and_capture_failures_close_acquired_resources(monkeypatch, failure):
+    from bodyctl.sensors import webcam_pose
+    from bodyctl.tier0 import run_webcam
+
+    closed = []
+
+    class Backend(DryRunBackend):
+        def close(self):
+            closed.append("pad")
+
+    class Estimator:
+        def __init__(self, path):
+            if failure == "model":
+                raise OSError("model failed")
+
+        def close(self):
+            closed.append("model")
+
+    class Camera:
+        size = (640, 480)
+        fps = 30
+
+        def __init__(self, *args):
+            if failure == "camera":
+                raise OSError("camera failed")
+
+        def read(self):
+            raise OSError("read failed")
+
+        def close(self):
+            closed.append("camera")
+
+    monkeypatch.setattr(webcam_pose, "ensure_model", lambda _: "unused.task")
+    monkeypatch.setattr(webcam_pose, "PoseEstimator", Estimator)
+    monkeypatch.setattr(webcam_pose, "Camera", Camera)
+    profile = load_profile("config/profiles/gta5.yaml")
+    with pytest.raises(OSError, match=f"{failure} failed"):
+        run_webcam(profile, Gamepad(Backend(), 30, 30), show=False)
+    expected = {"model": ["pad"], "camera": ["model", "pad"], "read": ["camera", "model", "pad"]}
+    assert closed == expected[failure]

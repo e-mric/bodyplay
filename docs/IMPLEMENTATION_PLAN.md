@@ -131,6 +131,8 @@ Every video chapter shows a latency number, so this comes before anything else i
 
 ## M2 — Tier 0: webcam (Oct 25–Nov 1)
 
+**First user test (Oct 26):** GTA V is installed directly on the Windows PC; a phone can supply the webcam. Follow `docs/tier0_windows.md` to test the dry-run dashboard, virtual controller, then native PC gameplay. This is a preliminary Tier 0 check; keep PC latency results separate and leave PS5/chiaki-ng acceptance unchecked. The actual MediaPipe lite model loads and processes blank frames on the Mac; real-person camera detection still needs this test.
+
 - [ ] `sensors/webcam_pose.py`: OpenCV capture at the camera's max fps (prefer 60), MediaPipe Pose landmarks, timestamps per frame.
     - Done in code (MediaPipe 1.x Tasks API, `PoseLandmarker` in VIDEO mode, model fetched to `data/models/` on first run). To do: first run with a real webcam on the Windows PC (the Mac mini has no camera).
 - [x] `gestures/webcam.py` (Tier 0 only; tested on synthetic poses in `pc/tests/posegen.py`, thresholds in the profile's `gestures.webcam`):

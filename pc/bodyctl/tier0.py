@@ -7,6 +7,7 @@ with the dry-run backend for development.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
+from contextlib import ExitStack
 from dataclasses import dataclass
 
 import numpy as np
@@ -83,60 +84,60 @@ def run_webcam(
     from bodyctl.sensors.webcam_pose import Camera, PoseEstimator, ensure_model
     from bodyctl.tools.dashboard import Dashboard
 
-    estimator = PoseEstimator(ensure_model(model))
-    cam = Camera(camera_index, size[0], size[1], fps)
-    print(f"camera {camera_index}: {cam.size[0]}x{cam.size[1]} @ {cam.fps:.0f} fps; Ctrl+C or q to quit")
-    app = Tier0(profile, gamepad)
-    dash = Dashboard() if show else None
-    if dash:
-        # Every marker pulse also flashes the dashboard corner (fallback marker).
-        gamepad.marker = MultiMarker(gamepad.marker, _FlashOnly(dash))
-    fps_est = 0.0
-    last_t = None
-    try:
-        for t_cap, frame in _frames(cam):
-            pose = estimator.detect(frame, t_cap)
-            res = app.step(t_cap, pose)
-            if last_t is not None:
-                fps_est += 0.1 * (1e6 / max(1, t_cap - last_t) - fps_est)
-            last_t = t_cap
-            if dash:
-                dash.note_events(res.events, t_cap)
-                img = dash.draw(
-                    frame,
-                    pose,
-                    app.gestures.state,
-                    gamepad.report,
-                    app.mode,
-                    app.stats.format(),
-                    fps_est,
-                    t_cap,
-                )
-                key = dash.show(img)
-                if key == ord("q"):
-                    break
-                if key == ord("m"):
-                    app.cycle_mode()
-                elif key == ord("p"):
-                    app.toggle_pause()
-                elif key == ord("r"):
-                    app.stats.reset()
-            else:
-                for e in res.events:
-                    if e.name != "step":
-                        print(f"{t_cap / 1e6:10.3f}s {e.name} ({e.confidence:.2f})")
-    except KeyboardInterrupt:
-        pass
-    finally:
-        print(app.stats.format())
-        gamepad.release_all(now_us())
-        gamepad.update(now_us())
-        gamepad.close()
-        cam.close()
-        estimator.close()
+    with ExitStack() as cleanup:
+        cleanup.callback(gamepad.close)
+        estimator = PoseEstimator(ensure_model(model))
+        cleanup.callback(estimator.close)
+        cam = Camera(camera_index, size[0], size[1], fps)
+        cleanup.callback(cam.close)
+        print(f"camera {camera_index}: {cam.size[0]}x{cam.size[1]} @ {cam.fps:.0f} fps; Ctrl+C or q to quit")
+        app = Tier0(profile, gamepad)
+        dash = Dashboard() if show else None
         if dash:
-            dash.close()
-    return 0
+            cleanup.callback(dash.close)
+            # Every marker pulse also flashes the dashboard corner (fallback marker).
+            gamepad.marker = MultiMarker(gamepad.marker, _FlashOnly(dash))
+        fps_est = 0.0
+        last_t = None
+        try:
+            for t_cap, frame in _frames(cam):
+                pose = estimator.detect(frame, t_cap)
+                res = app.step(t_cap, pose)
+                if last_t is not None:
+                    fps_est += 0.1 * (1e6 / max(1, t_cap - last_t) - fps_est)
+                last_t = t_cap
+                if dash:
+                    dash.note_events(res.events, t_cap)
+                    img = dash.draw(
+                        frame,
+                        pose,
+                        app.gestures.state,
+                        gamepad.report,
+                        app.mode,
+                        app.stats.format(),
+                        fps_est,
+                        t_cap,
+                    )
+                    key = dash.show(img)
+                    if key == ord("q"):
+                        break
+                    if key == ord("m"):
+                        app.cycle_mode()
+                    elif key == ord("p"):
+                        app.toggle_pause()
+                    elif key == ord("r"):
+                        app.stats.reset()
+                else:
+                    for e in res.events:
+                        if e.name != "step":
+                            print(f"{t_cap / 1e6:10.3f}s {e.name} ({e.confidence:.2f})")
+        except KeyboardInterrupt:
+            pass
+        finally:
+            print(app.stats.format())
+            gamepad.release_all(now_us())
+            gamepad.update(now_us())
+        return 0
 
 
 class _FlashOnly:

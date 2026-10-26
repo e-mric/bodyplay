@@ -36,6 +36,9 @@ Two machines: the **Mac** (development: write, build, test, flash) and the **Win
 
 ## Windows PC (play)
 
+For the first test with GTA V installed directly on Windows and a phone webcam,
+follow [the Tier 0 walkthrough](tier0_windows.md). That test does not use chiaki-ng.
+
 1. **Git and uv:** install [Git for Windows](https://git-scm.com/download/win), then uv in PowerShell: `winget install astral-sh.uv` (or the installer from [docs.astral.sh/uv](https://docs.astral.sh/uv/)).
 2. **Repo:** `git clone https://github.com/e-mric/bodyplay.git`, `cd bodyplay`, `uv sync`. Run tools from the repo root: `uv run bodyctl --help`. Update with `git pull` then `uv sync`.
 3. **chiaki-ng:** install from [github.com/streetpea/chiaki-ng](https://github.com/streetpea/chiaki-ng) (Windows installer). On the PS5: Settings → System → Remote Play → enable, then *Pair Device* and enter the code in chiaki-ng. Use a wired Ethernet connection on both ends if you can.
