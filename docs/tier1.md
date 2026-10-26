@@ -11,7 +11,7 @@ cd firmware
 pio run -e node_belt -t upload
 ```
 
-The node enumerates as **"Bodyplay Belt"**: a HID gamepad and a serial port (`/dev/cu.usbmodem*` on macOS, `COMx` on Windows). It boots with the GTA V profile built in (`firmware/lib/nodecore/default_profile.h`).
+The node enumerates as **"Bodyplay Belt"**: a HID gamepad and a serial port (`/dev/cu.usbmodem*` on macOS, `COMx` on Windows). It boots with the GTA V profile built in (`firmware/lib/padmap/default_profile.h`).
 
 ## 2. Calibrate
 

@@ -54,6 +54,7 @@ class Command(IntEnum):
     RAW_STREAM = 4
     CALIBRATE = 5
     HELLO = 6
+    HIL = 7
 
 
 class EventCode(IntEnum):
@@ -83,6 +84,7 @@ class StateField(IntEnum):
     LINK = 7
     LATENCY = 8
     PAD = 9
+    BODY = 10
 
 
 class Mode(IntEnum):

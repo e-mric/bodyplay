@@ -19,14 +19,14 @@ Source: Sony, [Access Controller for PlayStation 5 — Expansion Port Specificat
 | Ring 2 | not used | GND | GND |
 | Sleeve | Vdd/2 | Vdd (1.8 V) | Vdd (1.8 V) |
 
-> **Axis-order warning.** The spec's *jack* table and *plug* table name the stick axes on Tip and Ring 1 in **opposite order**. Check the figures, then confirm on the PS5 (Settings → Accessibility → Controllers → Access controller → test screen). A swapped axis is fixed in firmware (`swap_xy` per port), not by rewiring. Record the answer in `CLAUDE.md` (open question).
+> **Axis-order warning.** The spec's *jack* table and *plug* table name the stick axes on Tip and Ring 1 in **opposite order**. Check the figures, then confirm on the PS5 with `uv run bodyctl hil --port <hub>`, watching a screen that shows the inputs (the Access controller's settings under Settings → Accessibility → Controllers, or a game). A swapped axis is fixed in firmware (`swap_xy` per port), not by rewiring. Record the answer in `CLAUDE.md` (open question).
 
 ## How the hub drives each port type
 
 | Port type | Hub output | Circuit |
 |---|---|---|
 | Button | photoMOS relay (Panasonic AQY212EH) | ESP32 GPIO → 330 Ω → relay LED; relay output across the button contacts given by the spec's button-device figure (Tip and Sleeve per the table above; verify on the figure). Isolated, polarity-free, operate time < 1 ms. |
-| Trigger | MCP4728 DAC channel | DAC out → 1 kΩ → Tip; Schottky from Tip to Sleeve (Vdd); DAC GND → Ring 2. Code 0 = released, clamp 3499 = full pull (calibrate in the PS5's Access controller settings). |
+| Trigger | MCP4728 DAC channel | DAC out → 1 kΩ → Tip; Schottky from Tip to Sleeve (Vdd); DAC GND → Ring 2. Code 0 = released, clamp 3499 = full pull (calibrate against what the PS5 shows). |
 | Stick | 2 MCP4728 channels | DAC out X/Y → 1 kΩ each → Tip / Ring 1; Schottky clamps to Sleeve; DAC GND → Ring 2. Neutral expected near Vdd/2 ≈ 0.9 V (code ≈ 1800); confirm against the spec's stick table and calibrate. |
 
 Both MCP4728 boards default to I2C address 0x60, so each gets its own bus: bus 0 → DAC A (controller A), bus 1 → DAC B (controller B).

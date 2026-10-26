@@ -1,5 +1,6 @@
 #include "nodecore.h"
 
+#include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -8,7 +9,8 @@
 namespace bp {
 
 namespace {
-constexpr uint32_t kStatePeriodUs = 10000;  // 100 Hz STATE stream
+constexpr uint32_t kStatePeriodUs = 10000;  // 100 Hz STATE stream to the PC
+constexpr uint32_t kBodyPeriodUs = 4000;    // 250 Hz ST_BODY to the hub
 constexpr int kMaxEventsPerBurst = 16;
 
 int16_t clamp16(float v) {
@@ -70,7 +72,38 @@ void NodeCore::send(const Packet& p, const uint8_t* payload, size_t len) {
 }
 
 void NodeCore::send_event(const GestureEvent& e) {
+  // To the hub first (the hot path from Tier 2 on), stamped on the hub's clock once synced.
+  bool synced = clock_.valid();
+  Packet h = make_packet(node_id_, hub_seq_++, synced ? clock_.to_remote(e.t_us) : e.t_us, KIND_EVENT, e.code,
+                         e.confidence, synced ? FLAG_SYNCED : 0);
+  send_hub_packet(h, nullptr, 0, io_.hub_wants_duplicates());
   send(make_packet(node_id_, seq_++, e.t_us, KIND_EVENT, e.code, e.confidence));
+}
+
+void NodeCore::send_hub_packet(const Packet& p, const uint8_t* payload, size_t len, bool duplicate) {
+  uint8_t body[kMaxFrameBytes];
+  size_t n = pack(p, payload, len, body, sizeof(body));
+  if (!n) return;
+  io_.send_hub(body, n);
+  if (duplicate) {
+    body[offsetof(Packet, flags)] |= FLAG_DUPLICATE;
+    io_.send_hub(body, n);
+  }
+}
+
+void NodeCore::on_hub_frame(const uint8_t* body, size_t len) {
+  Packet p;
+  const uint8_t* payload;
+  size_t plen;
+  if (!unpack(body, len, &p, &payload, &plen)) return;
+  uint32_t now = io_.now_us();
+  if (p.kind == KIND_SYNC) {
+    clock_.on_sync(p.t_sensor_us, now);
+  } else if (p.kind == KIND_PONG && plen >= sizeof(Packet)) {
+    Packet ping;
+    memcpy(&ping, payload, sizeof(Packet));
+    clock_.on_rtt(now - ping.t_sensor_us);
+  }
 }
 
 void NodeCore::send_log(const char* text) {
@@ -140,7 +173,22 @@ void NodeCore::flush_raw() {
 void NodeCore::tick() {
   uint32_t now = io_.now_us();
   map_and_output(nullptr, 0, now);  // releases presses on time between IMU bursts
-  if (!cal_.done() || now - last_state_us_ < kStatePeriodUs) return;
+  if (!cal_.done()) return;
+  const BeltGestures& gb = gestures_;
+  if (now - last_body_us_ >= kBodyPeriodUs) {
+    last_body_us_ = now;
+    BodyStatePayload b;
+    b.run_stick = clamp16(gb.run_stick() * 1000);
+    b.lean_stick = clamp16(gb.lean_stick() * 1000);
+    b.twist_stick = clamp16(gb.twist_stick() * 1000);
+    b.flags = (gb.running() ? BODY_RUNNING : 0) | (gb.sprinting() ? BODY_SPRINTING : 0);
+    b.reserved = 0;
+    bool synced = clock_.valid();
+    Packet p = make_packet(node_id_, hub_seq_++, synced ? clock_.to_remote(now) : now, KIND_STATE, ST_BODY, 255,
+                           synced ? FLAG_SYNCED : 0, clamp16(gb.cadence_hz() * 100));
+    send_hub_packet(p, reinterpret_cast<const uint8_t*>(&b), sizeof(b), false);
+  }
+  if (now - last_state_us_ < kStatePeriodUs) return;
   last_state_us_ = now;
   const BeltGestures& g = gestures_;
   send(make_packet(node_id_, seq_++, now, KIND_STATE, ST_CADENCE, 255, 0, clamp16(g.cadence_hz() * 100),
@@ -203,30 +251,21 @@ void NodeCore::on_command(const Packet& p) {
 }
 
 void NodeCore::on_profile_chunk(const Packet& p, const uint8_t* payload, size_t len) {
-  int16_t index = p.value[0], count = p.value[1];
-  if (index == 0) {
-    prof_len_ = 0;
-    prof_next_ = 0;
-  }
-  if (index != prof_next_ || count <= 0 || prof_len_ + len > sizeof(prof_buf_)) {
-    prof_next_ = 0;
-    ack(KIND_PROFILE_CHUNK, p.seq, 2);  // out of order or too big: restart from chunk 0
+  ProfileReceiver::Status st = prof_rx_.feed(p.value[0], p.value[1], payload, len);
+  if (st == ProfileReceiver::OUT_OF_ORDER) {
+    ack(KIND_PROFILE_CHUNK, p.seq, PROFILE_ACK_ORDER);  // restart from chunk 0
     return;
   }
-  memcpy(prof_buf_ + prof_len_, payload, len);
-  prof_len_ += len;
-  ++prof_next_;
-  if (prof_next_ < count) {
-    ack(KIND_PROFILE_CHUNK, p.seq, 0);
+  if (st == ProfileReceiver::MORE) {
+    ack(KIND_PROFILE_CHUNK, p.seq, PROFILE_ACK_OK);
     return;
   }
-  bool ok = load_profile(prof_buf_, prof_len_);
+  bool ok = load_profile(prof_rx_.data(), prof_rx_.size());
   if (ok) {
-    io_.save_profile(prof_buf_, prof_len_);
+    io_.save_profile(prof_rx_.data(), prof_rx_.size());
     mapper_.release_all(io_.now_us());
   }
-  prof_next_ = 0;
-  ack(KIND_PROFILE_CHUNK, p.seq, ok ? 0 : 3);
+  ack(KIND_PROFILE_CHUNK, p.seq, ok ? PROFILE_ACK_OK : PROFILE_ACK_REJECTED);
 }
 
 }  // namespace bp

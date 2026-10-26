@@ -51,6 +51,7 @@ enum Command : uint8_t {
   CMD_RAW_STREAM = 4,   // value[0] = 1 to stream RAW IMU frames (recording), 0 to stop
   CMD_CALIBRATE = 5,    // redo the standing calibration (stand still, facing the TV)
   CMD_HELLO = 6,        // reply with HELLO (version, role)
+  CMD_HIL = 7,          // hub bench test: value[0] = port (0..7, -1 = end), value[1] = level (see hubcore.h)
 };
 
 enum EventCode : uint8_t {
@@ -80,7 +81,19 @@ enum StateField : uint8_t {
   ST_LINK = 7,      // value[0] = lost packets, value[1] = late packets
   ST_LATENCY = 8,   // value[0] = stage, value[1] = us (clamped to int16)
   ST_PAD = 9,       // payload = HID gamepad report (padmap/hid_report.h), sent on change
+  ST_BODY = 10,     // node -> hub, 250 Hz: value[0] = cadence x100; payload = BodyStatePayload
 };
+
+// ST_BODY payload: the continuous sources the hub maps to sticks and triggers.
+struct __attribute__((packed)) BodyStatePayload {
+  int16_t run_stick;    // x1000, 0..1000
+  int16_t lean_stick;   // x1000, -1000..1000
+  int16_t twist_stick;  // x1000, -1000..1000
+  uint8_t flags;        // BODY_RUNNING | BODY_SPRINTING | BODY_AIMING
+  uint8_t reserved;
+};
+static_assert(sizeof(BodyStatePayload) == 8, "BodyStatePayload must stay 8 bytes");
+enum BodyFlags : uint8_t { BODY_RUNNING = 0x01, BODY_SPRINTING = 0x02, BODY_AIMING = 0x04 };
 
 enum Mode : uint8_t {
   MODE_ON_FOOT = 0,

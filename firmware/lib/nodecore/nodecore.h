@@ -16,7 +16,9 @@
 #include "mount.h"
 #include "padmap.h"
 #include "profile_bin.h"
+#include "profile_rx.h"
 #include "protocol.h"
+#include "timesync.h"
 
 namespace bp {
 
@@ -29,6 +31,14 @@ class NodeIo {
   virtual void marker_pulse() = 0;
   virtual void save_profile(const uint8_t* data, size_t len) = 0;
   virtual uint32_t now_us() = 0;
+  // Link to the Tier 2 hub (UART tether now, ESP-NOW in M5): unframed packet bodies.
+  // Default: no hub (Tier 1).
+  virtual void send_hub(const uint8_t* body, size_t len) {
+    (void)body;
+    (void)len;
+  }
+  // ESP-NOW sends every event twice ~300 us apart; a wire doesn't need to.
+  virtual bool hub_wants_duplicates() { return false; }
 };
 
 struct NodeSample {
@@ -51,6 +61,9 @@ class NodeCore {
   void on_samples(const NodeSample* s, size_t n);
   // A decoded frame body from the PC (CDC).
   void on_frame(const uint8_t* body, size_t len);
+  // A packet from the hub (SYNC / PONG for the clock).
+  void on_hub_frame(const uint8_t* body, size_t len);
+  const ClockSync& hub_clock() const { return clock_; }
   // Call every ~10 ms: STATE packets, report re-evaluation for press timing.
   void tick();
 
@@ -74,6 +87,7 @@ class NodeCore {
 
   void send(const Packet& p, const uint8_t* payload = nullptr, size_t len = 0);
   void send_event(const GestureEvent& e);
+  void send_hub_packet(const Packet& p, const uint8_t* payload, size_t len, bool duplicate);
   void send_log(const char* text);
   void ack(uint8_t kind, uint16_t seq, int16_t status);
   void map_and_output(const uint8_t* events, int n, uint32_t sample_t_us);
@@ -95,6 +109,9 @@ class NodeCore {
   HidGamepad last_hid_;
   bool hid_sent_ = false;
   uint32_t last_state_us_ = 0;
+  uint32_t last_body_us_ = 0;
+  uint16_t hub_seq_ = 0;
+  ClockSync clock_;
 
   // RAW streaming.
   bool raw_stream_ = false;
@@ -102,10 +119,7 @@ class NodeCore {
   uint8_t raw_n_ = 0;
   uint32_t raw_t0_us_ = 0;
 
-  // Profile push.
-  uint8_t prof_buf_[kMaxProfileBytes];
-  size_t prof_len_ = 0;
-  int16_t prof_next_ = 0;
+  ProfileReceiver prof_rx_;
 };
 
 }  // namespace bp

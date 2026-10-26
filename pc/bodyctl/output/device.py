@@ -166,7 +166,10 @@ class DeviceLink:
         raise DeviceError(f"no ACK for {Kind(kind).name} seq {seq} within {timeout:.1f} s")
 
     def command(self, cmd: Command, value: int = 0, timeout: float = ACK_TIMEOUT_S) -> None:
-        seq = self.send(Packet(NodeId.PC, 0, now_us(), Kind.CMD, cmd, value=(value, 0)))
+        self.command_values(cmd, value, 0, timeout)
+
+    def command_values(self, cmd: Command, v0: int, v1: int, timeout: float = ACK_TIMEOUT_S) -> None:
+        seq = self.send(Packet(NodeId.PC, 0, now_us(), Kind.CMD, cmd, value=(v0, v1)))
         status = self._wait_ack(Kind.CMD, seq, timeout)
         if status != 0:
             raise DeviceError(f"{cmd.name} refused (status {status})")

@@ -240,6 +240,38 @@ def cmd_plot(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_hil(args: argparse.Namespace) -> int:
+    from bodyctl.config.profile import load_profile
+    from bodyctl.output.device import DeviceError, open_link
+    from bodyctl.tools.hil import run_hil, save_results
+
+    prof = load_profile(args.profile)
+    print("On the PS5, open a screen that shows the inputs live (the Access controller's settings under")
+    print("Settings > Accessibility > Controllers, or a game you know). Hub on USB, ports plugged in.")
+    print("Answer y/n for each check. Ctrl+C stops and releases everything.")
+
+    def ask(q: str) -> bool:
+        return input(f"  {q} [y/n] ").strip().lower().startswith("y")
+
+    link = open_link(args.port)
+    try:
+        h = link.hello()
+        if h.node_id != 10:
+            print(f"that's node {h.node_id}, not the hub", file=sys.stderr)
+            return 1
+        results = run_hil(link, prof, ask, args.hold)
+    except (DeviceError, KeyboardInterrupt) as e:
+        print(f"stopped: {e}", file=sys.stderr)
+        return 1
+    finally:
+        link.close()
+    bad = [r for r in results if not r["ok"]]
+    print(f"{len(results) - len(bad)}/{len(results)} checks ok -> {save_results(results)}")
+    for r in bad:
+        print(f"  FAILED {r['port']} {r['check']} ({r['expect']})")
+    return 0 if not bad else 1
+
+
 def cmd_latency_video(args: argparse.Namespace) -> int:
     from bodyctl.tools import latency_video as lv
 
@@ -425,8 +457,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--vid", type=lambda v: int(v, 0), default=None, help="USB vendor id (default XIAO 0x2886)"
     )
     sp.add_argument("--pid", type=lambda v: int(v, 0), default=None, help="USB product id (default 0x0056)")
-    sp = add("hil", "Hardware-in-the-loop: toggle each port and confirm on the PS5", _todo("M4"))
-    sp.add_argument("--port", required=True)
+    sp = add("hil", "Bench test: the hub drives each port; confirm what the PS5 shows", cmd_hil)
+    sp.add_argument("--port", required=True, help="the hub's serial port")
+    sp.add_argument("--profile", default="config/profiles/gta5.yaml")
+    sp.add_argument("--hold", type=float, default=1.0, help="seconds each output is held before asking")
     return p
 
 

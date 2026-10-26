@@ -173,22 +173,22 @@ Every video chapter shows a latency number, so this comes before anything else i
 
 ## M4 — Tier 2: hub + Access controller A (Oct 31–Nov 7)
 
-**Wiring (hub = ESP32-S3-DevKitC-1):**
+**Wiring (hub = ESP32-S3-DevKitC-1):** pins, channel table and bring-up steps in `hardware/wiring_tier2.md` (to build when the parts arrive).
 
 - [ ] Two I2C buses (both MCP4728 boards default to address 0x60): bus 0 → DAC A (controller A: left stick, 2 channels), bus 1 → DAC B (controller B, M6: right stick + R2 + L2, 4 channels). 400 kHz–1 MHz.
-- [ ] DAC config: internal Vref 2.048 V, gain 1. **Hard clamp: max code = floor(1.75 / 2.048 × 4095) = 3499** (0.05 V margin under 1.8 V). Stick neutral expected near Vdd/2 ≈ 0.9 V (code ≈ 1800); confirm against the spec's stick table and calibrate in the PS5's Access controller settings.
+- [x] DAC config (firmware): internal Vref 2.048 V, gain 1, multi-write only (never VDD-referenced fast write). **Hard clamp: max code = floor(1.75 / 2.048 × 4095) = 3499** (0.05 V margin under 1.8 V). Stick neutral expected near Vdd/2 ≈ 0.9 V (code ≈ 1800); confirm against the spec's stick table and calibrate against what the PS5 shows. Clamp in `lib/hubout/dac.h`, tested exhaustively (`test_hubout`).
 - [ ] Each analog output: DAC → 1 kΩ series resistor → port pin, Schottky clamp to the port's Vdd (Sleeve), ground to Ring 2.
 - [ ] Buttons: GPIO → 330 Ω → AQY212EH LED; relay output across the button contacts given by the spec's button-device circuit (Tip and Sleeve per the pin table; verify on the figure). Operate time is under 1 ms (~0.65 ms datasheet class).
 - [ ] Spare GPIO → marker LED for M1.
-- [ ] **Bring-up checklist before plugging into the controller:** multimeter on every output at code 0, neutral, max; scope or LED test of every relay; confirm no voltage on ports from the hub side when powered off.
+- [x] **Bring-up checklist written** (`hardware/wiring_tier2.md`); to do on the bench: multimeter on every output at code 0, neutral, max; scope or LED test of every relay; confirm no voltage on ports from the hub side when powered off.
 
 **Firmware (`src/hub`):**
 
-- [ ] Output layer with `set_stick(port, x, y)`, `set_trigger(port, v)`, `press(port)`, enforcing the clamp and the 30/30 ms rule; unit tests for the clamp and the scheduler.
-- [ ] Profile receiver (from PC over USB serial), stored in NVS; mode state machine (`on_foot`, `car`, `bike`, `boat`, `heli`, `plane`, `swim`, `qte`), ownership rules.
-- [ ] Temporary input: belt node wired to the hub over UART (tethered) so M4 doesn't depend on ESP-NOW.
-- [ ] PS5 setup notes in `hardware/ps5_setup.md`: Access controller profile mapping each port, USB communication mode, pairing with the DualSense as one virtual controller.
-- [ ] Test the open questions: Access stick + DualSense stick on the same function; axis order; record answers in `CLAUDE.md`.
+- [x] Output layer enforcing the clamp and the 30/30 ms rule: `lib/hubout` (DAC codes, port wiring, `build_output`) on top of the shared `PadMapper`/`PressScheduler`; native tests for the clamp, scheduler and ports.
+- [x] Profile receiver (from PC over USB serial), stored in NVS (built-in GTA V profile until one is pushed); mode state machine (`on_foot`, `car`, `bike`, `boat`, `heli`, `plane`, `swim`, `qte`, `paused`), ownership rules. Local enter/exit switches mode after the Triangle press is released; stale body state (> 200 ms) drops the sticks to neutral; PC events are ignored (hard rule 3). `lib/hubcore`, native-tested with a NodeCore tethered to it.
+- [x] Temporary input: belt node wired to the hub over UART (tethered) so M4 doesn't depend on ESP-NOW (`pio run -e node_belt_tether`; node syncs to the hub clock, events + 250 Hz `ST_BODY`).
+- [x] PS5 setup notes in `hardware/ps5_setup.md`: Access controller profile mapping each port, USB communication mode, pairing with the DualSense as one virtual controller (menu names to verify on the console).
+- [ ] Test the open questions: Access stick + DualSense stick on the same function; axis order; record answers in `CLAUDE.md`. Tool ready: `uv run bodyctl hil --port <hub>`.
 - [ ] Measure: tell → LED, LED → screen; compare with the DualSense baseline.
 
 **Acceptance:** median tell→LED ≤ 10 ms, p99 ≤ 15 ms over 50 trials (tethered); a GTA V on-foot mission playable with body + DualSense.
@@ -260,7 +260,7 @@ Every video chapter shows a latency number, so this comes before anything else i
 
 - **Unit (native):** protocol, clamp math, press scheduler, mode/ownership rules, every gesture state machine on fixture traces.
 - **Replay:** any recorded session can be replayed through current firmware logic; regressions in detection rate or false positives fail CI on the fixtures.
-- **Hardware-in-the-loop (manual, scripted):** `bodyctl hil` toggles each port and asks you to confirm in the PS5's controller test screen.
+- **Hardware-in-the-loop (manual, scripted):** `bodyctl hil` toggles each port and asks you to confirm what the PS5 shows.
 - **Latency acceptance:** M1 analyzer on 50 trials per action per tier; results committed to `data/results/<tier>.csv` (small files) for the video.
 
 ## Risks

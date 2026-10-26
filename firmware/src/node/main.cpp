@@ -30,6 +30,15 @@ static const char* kProduct = "Bodyplay Wrist";
 #error "Build with BP_ROLE_BELT or BP_ROLE_WRIST"
 #endif
 
+// Tier 2 tethered: -DBP_TETHER sends events and body state to the hub over UART
+// (D6 TX -> hub RX 18, D7 RX <- hub TX 17, GND shared) and syncs to the hub's clock.
+#ifdef BP_TETHER
+static constexpr int kPinTetherTx = D6;
+static constexpr int kPinTetherRx = D7;
+static constexpr uint32_t kTetherBaud = 2000000;
+static StreamBufferHandle_t hub_stream;
+#endif
+
 static constexpr int kPinInt1 = D1;
 static constexpr int kPinMarker = D0;
 #ifndef BP_I2C_HZ
@@ -62,6 +71,13 @@ class BoardIo : public bp::NodeIo {
   }
   void save_profile(const uint8_t* data, size_t len) override { prefs.putBytes("profile", data, len); }
   uint32_t now_us() override { return micros(); }
+#ifdef BP_TETHER
+  void send_hub(const uint8_t* body, size_t len) override {
+    uint8_t wire[bp::kMaxWireFrameBytes];
+    size_t n = bp::frame_encode(body, len, wire, sizeof(wire));
+    if (n) Serial1.write(wire, n);
+  }
+#endif
 };
 
 #ifndef BP_MOUNT_FORWARD
@@ -122,8 +138,21 @@ static void on_cdc(void*, esp_event_base_t, int32_t event_id, void*) {
   }
 }
 
+#ifdef BP_TETHER
+static void on_tether_rx() {
+  uint8_t buf[64];
+  while (Serial1.available()) {
+    size_t n = Serial1.read(buf, sizeof(buf));
+    if (n) xStreamBufferSend(hub_stream, buf, n, 0);
+  }
+}
+#endif
+
 static void imu_task(void*) {
   bp::FrameDecoder decoder;
+#ifdef BP_TETHER
+  bp::FrameDecoder hub_decoder;
+#endif
   lsm::FifoParser parser;
   bp::NodeSample samples[kMaxWordsPerRead / 2];
   for (;;) {
@@ -136,6 +165,13 @@ static void imu_task(void*) {
       for (size_t i = 0; i < n_rx; ++i)
         if (decoder.feed(rx[i])) core.on_frame(decoder.body(), decoder.body_len());
     }
+
+#ifdef BP_TETHER
+    while ((n_rx = xStreamBufferReceive(hub_stream, rx, sizeof(rx), 0)) > 0) {
+      for (size_t i = 0; i < n_rx; ++i)
+        if (hub_decoder.feed(rx[i])) core.on_hub_frame(hub_decoder.body(), hub_decoder.body_len());
+    }
+#endif
 
     uint8_t st[2];
     if (imu_read(lsm::FIFO_STATUS1, st, 2)) {
@@ -173,6 +209,11 @@ void setup() {
   esp_timer_create(&targs, &marker_off_timer);
 
   rx_stream = xStreamBufferCreate(2048, 1);
+#ifdef BP_TETHER
+  hub_stream = xStreamBufferCreate(1024, 1);
+  Serial1.begin(kTetherBaud, SERIAL_8N1, kPinTetherRx, kPinTetherTx);
+  Serial1.onReceive(on_tether_rx, true);
+#endif
   Serial.onEvent(on_cdc);
   Serial.setTxTimeoutMs(0);
   Serial.begin(115200);

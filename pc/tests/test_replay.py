@@ -79,14 +79,14 @@ def test_compiled_profile_layout():
 
 
 def test_firmware_default_profile_is_fresh():
-    """firmware/lib/nodecore/default_profile.h is what a freshly flashed node boots with.
+    """firmware/lib/padmap/default_profile.h is what a freshly flashed node or hub boots with.
 
     Regenerate: uv run bodyctl profile compile config/profiles/gta5.yaml --c-header
-    -o firmware/lib/nodecore/default_profile.h
+    -o firmware/lib/padmap/default_profile.h
     """
     from bodyctl.config.compile import c_header, compile_profile
 
-    path = Path(__file__).parents[2] / "firmware" / "lib" / "nodecore" / "default_profile.h"
+    path = Path(__file__).parents[2] / "firmware" / "lib" / "padmap" / "default_profile.h"
     fresh = c_header(
         compile_profile(load_profile("config/profiles/gta5.yaml")), source="config/profiles/gta5.yaml"
     )
