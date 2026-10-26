@@ -44,6 +44,13 @@ class Kind(IntEnum):
     LOG = 9
     RAW = 10
     ACK = 11
+    CMD = 12
+
+
+class Command(IntEnum):
+    STATS = 1
+    STATS_RESET = 2
+    MARKER = 3
 
 
 class EventCode(IntEnum):

@@ -41,6 +41,13 @@ enum Kind : uint8_t {
   KIND_LOG = 9,            // code = log level; payload = text
   KIND_RAW = 10,           // value[0] = sample count, value[1] = sample period (us); payload = RawSample[]
   KIND_ACK = 11,           // code = acked Kind, value[0] = acked seq, value[1] = status (0 ok)
+  KIND_CMD = 12,           // PC -> device; code = Command
+};
+
+enum Command : uint8_t {
+  CMD_STATS = 1,        // reply with LOG lines of per-stage latency histograms
+  CMD_STATS_RESET = 2,  // clear the histograms
+  CMD_MARKER = 3,       // pulse the marker LED now (Tier 0: the PC's output marker)
 };
 
 enum EventCode : uint8_t {

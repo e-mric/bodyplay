@@ -78,7 +78,7 @@ void test_cobs_round_trip_edge_cases() {
 void test_decoder_round_trip_every_kind() {
   FrameDecoder dec;
   const uint8_t kinds[] = {KIND_HELLO, KIND_EVENT, KIND_STATE,         KIND_SYNC, KIND_PING, KIND_PONG,
-                           KIND_MODE,  KIND_LOG,   KIND_PROFILE_CHUNK, KIND_RAW,  KIND_ACK};
+                           KIND_MODE,  KIND_LOG,   KIND_PROFILE_CHUNK, KIND_RAW,  KIND_ACK, KIND_CMD};
   for (size_t k = 0; k < sizeof(kinds); ++k) {
     Packet p = make_packet(NODE_WRIST_R, static_cast<uint16_t>(k * 1000), 0x00000100u * k, kinds[k],
                            static_cast<uint8_t>(k), 255, FLAG_SYNCED, -32768, 32767);

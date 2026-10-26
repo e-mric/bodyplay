@@ -116,6 +116,7 @@ def _c_enum(text: str, name: str, prefix: str) -> dict[str, int]:
         ("StateField", "ST_", StateField),
         ("Mode", "MODE_", Mode),
         ("Flags", "FLAG_", Flags),
+        ("Command", "CMD_", bp.Command),
     ],
 )
 def test_enums_match_firmware(c_name, prefix, py_enum):

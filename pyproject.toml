@@ -17,7 +17,10 @@ bodyctl = "bodyctl.cli:main"
 [dependency-groups]
 dev = ["pytest>=8.0", "ruff>=0.6"]
 # latency-video analyzer, dashboard, webcam capture
-video = ["opencv-python>=4.9"]
+video = [
+    "matplotlib>=3.8",
+    "opencv-python>=4.9",
+]
 # Tier 0 pose estimation
 webcam = ["mediapipe>=0.10"]
 # Tier 0 virtual Xbox 360 pad (ViGEmBus); Windows only

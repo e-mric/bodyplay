@@ -61,6 +61,45 @@ def cmd_synth(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_latency_video(args: argparse.Namespace) -> int:
+    from bodyctl.tools import latency_video as lv
+
+    video = Path(args.video)
+    if not video.exists():
+        print(f"no such file: {video}", file=sys.stderr)
+        return 1
+    saved = lv.rois_path(video)
+    rois: dict[str, lv.Roi] = {}
+    if args.rois_from:
+        rois = lv.load_rois(lv.rois_path(Path(args.rois_from)))
+    elif saved.exists() and not args.select:
+        rois = lv.load_rois(saved)
+    for spec in args.roi:
+        name, _, box = spec.partition("=")
+        if name not in lv.ROI_NAMES:
+            print(f"ROI name must be one of {lv.ROI_NAMES}, got {name!r}", file=sys.stderr)
+            return 1
+        rois[name] = lv.Roi.parse(box)
+    if not rois or args.select:
+        rois = lv.select_rois_interactive(video, lv.ROI_NAMES)
+    if "led" not in rois and "tell" not in rois:
+        print("need at least a led or tell ROI", file=sys.stderr)
+        return 1
+    lv.save_rois(saved, rois)
+    settings = lv.Settings(
+        k_sigma=args.k, tell_lead_max_ms=args.lead_max_ms, screen_lag_max_ms=args.lag_max_ms
+    )
+    trials, summary, csv_path = lv.run(video, rois, settings, args.out, args.fps)
+    missing = sum(1 for t in trials if None in (t.tell_frame, t.screen_frame) and "screen" in rois)
+    print(f"{len(trials)} trials -> {csv_path}" + (f" ({missing} incomplete)" if missing else ""))
+    for col, st in summary.items():
+        print(
+            f"  {col:<18} median {st['median']:7.1f}  p90 {st['p90']:7.1f}  p99 {st['p99']:7.1f}  "
+            f"[{st['min']:.1f}..{st['max']:.1f}] ms  n={st['n']}"
+        )
+    return 0 if trials else 1
+
+
 def cmd_trace_info(args: argparse.Namespace) -> int:
     import json
 
@@ -123,8 +162,22 @@ def build_parser() -> argparse.ArgumentParser:
     sp = add("replay", "Replay a .bptrace through the gesture library", _todo("M3"))
     sp.add_argument("trace")
 
-    sp = add("latency-video", "Measure tell -> LED -> screen latency from a 240 fps clip", _todo("M1"))
+    sp = add("latency-video", "Measure tell -> LED -> screen latency from a 240 fps clip", cmd_latency_video)
     sp.add_argument("video")
+    sp.add_argument(
+        "--roi",
+        action="append",
+        default=[],
+        metavar="NAME=x,y,w,h",
+        help="tell, led or screen ROI in pixels (repeatable); omit to draw them on the first frame",
+    )
+    sp.add_argument("--rois-from", help="reuse ROIs saved next to another clip (same framing)")
+    sp.add_argument("--select", action="store_true", help="draw ROIs even if saved ones exist")
+    sp.add_argument("--fps", type=float, help="override the clip's frame rate (slow-mo exports)")
+    sp.add_argument("--k", type=float, default=6.0, help="onset threshold in baseline std devs")
+    sp.add_argument("--lead-max-ms", type=float, default=600.0, help="longest tell -> LED to search")
+    sp.add_argument("--lag-max-ms", type=float, default=500.0, help="longest LED -> screen to search")
+    sp.add_argument("-o", "--out", help="output folder (default: next to the clip)")
 
     sp = add("synth", "Write synthetic IMU traces with ground-truth labels", cmd_synth)
     sp.add_argument("-o", "--out", default="data/synth")

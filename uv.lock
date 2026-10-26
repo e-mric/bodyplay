@@ -50,6 +50,7 @@ gamepad = [
     { name = "vgamepad", marker = "sys_platform == 'win32'" },
 ]
 video = [
+    { name = "matplotlib" },
     { name = "opencv-python" },
 ]
 webcam = [
@@ -70,7 +71,10 @@ dev = [
     { name = "ruff", specifier = ">=0.6" },
 ]
 gamepad = [{ name = "vgamepad", marker = "sys_platform == 'win32'", specifier = "==0.1.0" }]
-video = [{ name = "opencv-python", specifier = ">=4.9" }]
+video = [
+    { name = "matplotlib", specifier = ">=3.8" },
+    { name = "opencv-python", specifier = ">=4.9" },
+]
 webcam = [{ name = "mediapipe", specifier = ">=0.10" }]
 
 [[package]]

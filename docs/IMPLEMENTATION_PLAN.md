@@ -115,12 +115,16 @@ Development happens on the Mac; chiaki-ng and the Tier 0–1 PC side run on the 
 Every video chapter shows a latency number, so this comes before anything else is "done".
 
 - [ ] **Output marker LED:** whatever produces the input (PC in Tier 0, the node in Tier 1, the hub in Tier 2+) lights a bright LED for 20 ms on every output change. Tier 0–1: a USB-serial-driven LED on any spare microcontroller, or the screen corner flash in the dashboard as fallback.
+    - Done in code: `firmware/src/marker` (XIAO, `CMD_MARKER` over CDC → 20 ms pulse via `esp_timer`), `MarkerPulse` in `lib/latency`, `bodyctl.output.marker`. To do: flash and check on a XIAO; node and hub hooks land with M3/M4.
 - [ ] **Body marker:** a strip of bright tape on the belt; the analyzer tracks its vertical motion to find movement onset.
-- [ ] `bodyctl latency-video <file>`: OpenCV; user draws three ROIs (body marker, LED, TV region); detects onset frames (intensity/position change > k·σ of a 0.5 s baseline); outputs per-trial CSV (tell→LED, LED→screen, tell→screen in ms) and a histogram PNG.
-- [ ] Baseline protocol: the same analyzer on DualSense button presses (thumb marker ROI) gives the reference every tier is compared against.
+- [x] `bodyctl latency-video <file>`: OpenCV; user draws three ROIs (body marker, LED, TV region); detects onset frames (intensity/position change > k·σ of a 0.5 s baseline); outputs per-trial CSV (tell→LED, LED→screen, tell→screen in ms) and a histogram PNG.
+- [x] Baseline protocol: the same analyzer on DualSense button presses (thumb marker ROI) gives the reference every tier is compared against.
 - [ ] Firmware/PC latency log: per-stage histograms (sample→detect, detect→send, send→receive, receive→output) printed on demand.
+    - Done in code: `lib/latency` (`LatencyStats`, native-tested), `CMD_STATS`, `bodyctl.tools.stats.StageStats` for the PC pipeline. To do: wire into node/hub firmware (M3/M4).
 
 **Acceptance:** analyzer reproduces hand-counted frame numbers within ±1 frame on a 20-trial test clip at 240 fps.
+
+*Status:* passes on a generated 20-trial 240 fps clip (`pc/tests/test_latency_video.py`); the real-clip check needs the rig. How-to: `docs/measuring.md`.
 
 **Video needs:** the measurement rig shown once in the intro; the same framing reused in every chapter.
 
