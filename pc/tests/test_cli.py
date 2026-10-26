@@ -46,7 +46,7 @@ def test_synth_and_trace_info(tmp_path, capsys):
 
 
 def test_unimplemented_commands_say_when(capsys):
-    assert main(["replay", "x.bptrace"]) == 2
+    assert main(["record", "--port", "COM9"]) == 2
     assert "M3" in capsys.readouterr().err
 
 

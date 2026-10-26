@@ -42,7 +42,9 @@ def cmd_profile_check(args: argparse.Namespace) -> int:
 def cmd_synth(args: argparse.Namespace) -> int:
     from bodyctl.tools import synth
 
-    if args.scenario:
+    if args.fixtures:
+        paths = synth.write_fixtures()
+    elif args.scenario:
         out = Path(args.out)
         paths = []
         for name in args.scenario:
@@ -82,6 +84,23 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
         print("On Tier 0 the dashboard is built into `bodyctl webcam`.", file=sys.stderr)
         return 2
     return _todo("M3")(args)
+
+
+def cmd_replay(args: argparse.Namespace) -> int:
+    from bodyctl.config.compile import BELT_PARAM_IDS, flatten_gestures
+    from bodyctl.config.profile import load_profile
+    from bodyctl.tools import replay
+
+    params = flatten_gestures(load_profile(args.profile))
+    for kv in args.set:
+        name, _, value = kv.partition("=")
+        if name not in BELT_PARAM_IDS:
+            print(f"unknown parameter {name!r}; known: {', '.join(BELT_PARAM_IDS)}", file=sys.stderr)
+            return 1
+        params[name] = float(value)
+    for trace in args.trace:
+        replay.main_print(Path(trace), params, args.forward, args.calib_ms, args.events)
+    return 0
 
 
 def cmd_latency_video(args: argparse.Namespace) -> int:
@@ -194,8 +213,13 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--port", required=True)
     sp.add_argument("-o", "--out", default="data/sessions")
 
-    sp = add("replay", "Replay a .bptrace through the gesture library", _todo("M3"))
-    sp.add_argument("trace")
+    sp = add("replay", "Replay a .bptrace through the firmware gesture library and score it", cmd_replay)
+    sp.add_argument("trace", nargs="+")
+    sp.add_argument("--profile", default="config/profiles/gta5.yaml", help="gesture thresholds to use")
+    sp.add_argument("--set", action="append", default=[], metavar="NAME=VALUE", help="override one threshold")
+    sp.add_argument("--forward", default="+x", help="board axis pointing forward when worn")
+    sp.add_argument("--calib-ms", type=int, default=800, help="standing calibration at the start")
+    sp.add_argument("--events", action="store_true", help="list every event")
 
     sp = add("latency-video", "Measure tell -> LED -> screen latency from a 240 fps clip", cmd_latency_video)
     sp.add_argument("video")
@@ -220,6 +244,9 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--noisy", action="store_true", help="with --scenario: add noise and tilt")
     sp.add_argument("--seed", type=int, default=0)
     sp.add_argument("--noisy-seeds", type=int, default=1, help="noisy variants per scenario")
+    sp.add_argument(
+        "--fixtures", action="store_true", help="regenerate firmware/test/fixtures (native gesture tests)"
+    )
 
     sp = add("trace", "Inspect a .bptrace file", cmd_trace_info)
     sp.add_argument("trace")

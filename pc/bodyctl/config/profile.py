@@ -41,6 +41,8 @@ class JumpParams(_Strict):
     push_jerk: float = Field(8.0, gt=0, description="Upward jerk (g/s) that marks the push-off reversal")
     crouch_hold_ms: int = Field(300, gt=0, description="A dip held this long without reversal = crouch")
     min_conf: float = Field(0.6, ge=0, le=1)
+    freefall_g: float = Field(-0.85, lt=0, description="Below this is running flight, not a jump dip")
+    running_dip_min_ms: int = Field(100, ge=0, description="Stricter minimum dip while running")
 
 
 class LeanParams(_Strict):

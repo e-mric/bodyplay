@@ -94,3 +94,17 @@ def test_generate_all(tmp_path):
     paths = synth.generate_all(tmp_path, noisy_seeds=1)
     assert len(paths) == 2 * len(synth.SCENARIOS)
     assert all(p.exists() and p.stat().st_size > 1000 for p in paths)
+
+
+@pytest.mark.parametrize(("name", "noisy"), synth.FIXTURES)
+def test_committed_fixtures_match_generator(tmp_path, name, noisy):
+    """firmware/test/fixtures must be regenerated (`bodyctl synth --fixtures`) after synth changes."""
+    committed = Trace.read(synth.FIXTURES_DIR / synth.fixture_name(name, noisy))
+    fresh = Trace.read(
+        synth.write_trace(synth.build(name, noisy=noisy, seed=0), tmp_path / "x.bptrace", name, noisy, 0)
+    )
+    a = np.array([(*s.accel, *s.gyro) for _, _, s in committed.raw_samples()])
+    b = np.array([(*s.accel, *s.gyro) for _, _, s in fresh.raw_samples()])
+    assert a.shape == b.shape
+    assert np.abs(a - b).max() <= 1  # allow 1 LSB of float rounding across platforms
+    assert committed.labels() == fresh.labels()

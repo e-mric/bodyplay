@@ -17,7 +17,8 @@ press:                          # virtual button timing (hard rule 8)
 gestures:
   step:   {peak_g: 0.25, refractory_ms: 200, stop_after_intervals: 1.5}
   cadence_curve: [1.5, 2.5, 3.5]       # steps/s where walk, jog, sprint reach full effect
-  jump:   {dip_g: -0.30, dip_min_ms: 40, push_jerk: 8.0, crouch_hold_ms: 300, min_conf: 0.6}
+  jump:   {dip_g: -0.30, dip_min_ms: 40, push_jerk: 8.0, crouch_hold_ms: 300, min_conf: 0.6,
+           freefall_g: -0.85, running_dip_min_ms: 100}
   lean:   {deadzone_deg: 6, full_deg: 25}
   twist:  {deadzone_deg: 15, full_deg: 45, max_rate: 1.0, rezero_still_ms: 1000}
   aim:    {forearm_pitch_deg: 35}

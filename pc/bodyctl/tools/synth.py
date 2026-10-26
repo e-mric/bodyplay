@@ -89,14 +89,14 @@ def add_jump(
     sig.label("jump_onset", i)
     n_dip = _idx(dip_ms / 1000)
     if hold_ms > 0:
-        # Slow descent: dip, then braking back to 0 g, then a held squat.
+        # Slow descent: dip, then braking back to 0 g, then a held squat. The detector
+        # calls it a crouch 300 ms into the dip when no sharp reversal came.
+        sig.label("squat_hold", i + _idx(0.3))
         a[i : i + n_dip] -= dip_g * _half_sine(n_dip)
         i += n_dip
         n_brake = _idx(dip_ms / 1000)
         a[i : i + n_brake] += dip_g * _half_sine(n_brake)
         i += n_brake
-        if hold_ms >= 300:
-            sig.label("squat_hold", i + _idx(0.3))
         i += _idx(hold_ms / 1000)
     else:
         a[i : i + n_dip] -= dip_g * _half_sine(n_dip)
@@ -119,10 +119,12 @@ def add_jump(
 def add_steps(sig: Signal, t0_s: float, t1_s: float, cadence_hz: float, ramp_s: float = 0.0) -> None:
     """Running in place from t0 to t1 at cadence_hz steps/s (optionally ramping up).
 
-    Each foot strike is a vertical impact pulse; between strikes the reading dips
-    (flight / unloading), keeping the mean at 1 g. The torso rolls side to side by
-    about 3 degrees per step. Labels: run_start (first strike), step (each strike),
-    run_stop (time after the last strike when no next step comes).
+    Below 2 steps/s it's marching: a gentle bounce plus a heel-strike pulse, never
+    leaving the ground. From 2 steps/s it's running in place: a ground contact (half
+    sine) then a flight phase where the accelerometer reads free fall (0 g), sized so
+    the mean stays at 1 g. The torso rolls side to side by about 3 degrees per step.
+    Labels: run_start (first strike), step (each strike), run_stop (time after the
+    last strike when no next step comes).
     """
     t = t0_s
     first = True
@@ -142,10 +144,15 @@ def add_steps(sig: Signal, t0_s: float, t1_s: float, cadence_hz: float, ramp_s: 
         last_strike = (i, period)
         n = _idx(period)
         seg = np.arange(min(n, sig.n - i)) * DT
-        width = 0.035
-        impact = 1.6 * np.exp(-0.5 * ((seg - 0.04) / width) ** 2)
-        impact -= impact.mean()  # zero-mean over the step: the body doesn't drift up or down
-        sig.accel[i : i + len(seg), 2] += impact
+        if c < 2.0:
+            bounce = 0.2 * np.cos(2 * np.pi * seg / period)
+            bounce += 0.4 * np.exp(-0.5 * ((seg - 0.03) / 0.02) ** 2)
+        else:
+            contact = 0.5 * period
+            amp = np.pi * (period - contact) / (2 * contact)  # half-sine mean balances 1 g of flight
+            bounce = np.where(seg < contact, amp * np.sin(np.pi * seg / contact), -1.0)
+        bounce -= bounce.mean()  # zero-mean over the step: the body doesn't drift up or down
+        sig.accel[i : i + len(seg), 2] += bounce
         side = 1 if k % 2 == 0 else -1
         roll = side * 3.0 * np.sin(np.pi * seg / period)
         sig.gyro[i : i + len(seg), 0] += np.gradient(roll, DT)
@@ -167,6 +174,20 @@ def add_weight_shift(sig: Signal, t0_s: float, t1_s: float, amp_deg: float = 5.0
     sig.gyro[i0:i1, 0] += np.gradient(roll_deg, DT)
     sig.accel[i0:i1, 1] += np.sin(np.radians(roll_deg))
     sig.accel[i0:i1, 2] += 0.05 * np.sin(2 * np.pi * 1.0 * t)
+
+
+def add_twist(sig: Signal, t0_s: float, t1_s: float, amp_deg: float = 30.0, hold_s: float = 1.0) -> None:
+    """Torso turns left by amp_deg, holds, turns back (camera turn). Labels twist_left at
+    the turn start and twist_back when it returns."""
+    i0 = _idx(t0_s)
+    n = _idx(0.3)
+    turn = amp_deg * (1 - np.cos(np.pi * np.arange(n) / n)) / 2
+    rate = np.gradient(turn, DT)
+    sig.label("twist_left", i0)
+    sig.gyro[i0 : i0 + n, 2] += rate
+    j = i0 + n + _idx(hold_s)
+    sig.label("twist_back", j)
+    sig.gyro[j : j + n, 2] -= rate
 
 
 def add_punch(sig: Signal, t0_s: float, peak_g: float = 3.0) -> None:
@@ -220,7 +241,7 @@ def _jump() -> Signal:
 
 def _jump_long_dip() -> Signal:
     s = Signal.still(5.0)
-    add_jump(s, 1.5, dip_g=0.3, dip_ms=300, hold_ms=500)
+    add_jump(s, 1.5, dip_g=0.4, dip_ms=300, hold_ms=500)
     return s
 
 
@@ -239,6 +260,12 @@ def _run(cadence: float) -> Callable[[], Signal]:
     return build
 
 
+def _twist() -> Signal:
+    s = Signal.still(6.0)
+    add_twist(s, 1.5, 4.0)
+    return s
+
+
 def _punch() -> Signal:
     s = Signal.still(3.0, node_id=NodeId.WRIST_R)
     add_punch(s, 1.2)
@@ -254,8 +281,39 @@ SCENARIOS: dict[str, Callable[[], Signal]] = {
     "run_1.5": _run(1.5),
     "run_2.5": _run(2.5),
     "run_3.5": _run(3.5),
+    "twist": _twist,
     "punch": _punch,
 }
+
+# Committed to firmware/test/fixtures/ for the native gesture tests
+# (`bodyctl synth --fixtures`); pc/tests checks they match this generator.
+FIXTURES: list[tuple[str, bool]] = [
+    ("still", False),
+    ("weight_shift", False),
+    ("weight_shift", True),
+    ("jump", False),
+    ("jump", True),
+    ("jump_long_dip", False),
+    ("run_start", False),
+    ("run_1.5", False),
+    ("run_2.5", False),
+    ("run_2.5", True),
+    ("run_3.5", False),
+    ("twist", False),
+]
+FIXTURES_DIR = Path(__file__).parents[3] / "firmware" / "test" / "fixtures"
+
+
+def fixture_name(name: str, noisy: bool) -> str:
+    return f"synth_{name}{'_noisy0' if noisy else ''}.bptrace"
+
+
+def write_fixtures(out_dir: str | Path = FIXTURES_DIR) -> list[Path]:
+    out = Path(out_dir)
+    return [
+        write_trace(build(name, noisy=noisy, seed=0), out / fixture_name(name, noisy), name, noisy, 0)
+        for name, noisy in FIXTURES
+    ]
 
 
 def build(name: str, noisy: bool = False, seed: int = 0) -> Signal:
