@@ -158,7 +158,7 @@ def main_print(trace: Path, params: dict[str, float], forward: str, calib_ms: in
     calibrated_at, dets = run(trace, params, forward, calib_ms)
     tr = Trace.read(trace)
     labels: dict[str, list[int]] = {}
-    for lb in tr.labels():
+    for lb in tr.device_labels():
         labels.setdefault(lb.event, []).append(lb.t_us)
     if show_events:
         for d in dets:

@@ -76,3 +76,26 @@ def test_compiled_profile_layout():
     version, n_params, n_ports, n_modes, hold, release = struct.unpack_from("<BBBBHH", data, 4)
     assert (version, n_params, n_ports, n_modes, hold, release) == (1, len(BELT_PARAM_IDS), 8, 6, 30, 30)
     assert crc8(data[:-1]) == data[-1]
+
+
+def test_firmware_default_profile_is_fresh():
+    """firmware/lib/nodecore/default_profile.h is what a freshly flashed node boots with.
+
+    Regenerate: uv run bodyctl profile compile config/profiles/gta5.yaml --c-header
+    -o firmware/lib/nodecore/default_profile.h
+    """
+    from bodyctl.config.compile import c_header, compile_profile
+
+    path = Path(__file__).parents[2] / "firmware" / "lib" / "nodecore" / "default_profile.h"
+    fresh = c_header(
+        compile_profile(load_profile("config/profiles/gta5.yaml")), source="config/profiles/gta5.yaml"
+    )
+    assert path.read_text(encoding="utf-8") == fresh
+
+
+def test_plot_jump(tmp_path):
+    pytest.importorskip("matplotlib")
+    from bodyctl.tools.plot import plot_event
+
+    out = plot_event(FIXTURES_DIR / "synth_jump.bptrace", tmp_path / "jump.png", [1.6668])
+    assert out.exists() and out.stat().st_size > 10_000

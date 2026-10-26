@@ -40,13 +40,16 @@ def cmd_profile_check(args: argparse.Namespace) -> int:
 
 
 def cmd_profile_compile(args: argparse.Namespace) -> int:
-    from bodyctl.config.compile import compile_profile
+    from bodyctl.config.compile import c_header, compile_profile
     from bodyctl.config.profile import load_profile
 
     data = compile_profile(load_profile(args.profile))
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_bytes(data)
+    if args.c_header:
+        out.write_text(c_header(data, source=Path(args.profile).as_posix()), encoding="utf-8", newline="\n")
+    else:
+        out.write_bytes(data)
     print(f"{out}: {len(data)} bytes")
     return 0
 
@@ -91,11 +94,102 @@ def cmd_webcam(args: argparse.Namespace) -> int:
     )
 
 
+def _link_args(p: argparse.ArgumentParser, required: bool = True) -> None:
+    g = p.add_mutually_exclusive_group(required=required)
+    g.add_argument("--port", help="COM5 on Windows, /dev/cu.usbmodem* on macOS")
+    g.add_argument("--sim", metavar="TRACE", help="simulated node playing a .bptrace (no hardware)")
+
+
+def _open(args: argparse.Namespace):
+    from bodyctl.output.device import open_link
+
+    return open_link(args.port, args.sim)
+
+
+def cmd_device(args: argparse.Namespace) -> int:
+    from bodyctl.output.device import DeviceError
+    from bodyctl.protocol import Command, Mode
+
+    link = _open(args)
+    try:
+        action = args.device_command
+        if action == "push-profile":
+            from bodyctl.config.compile import compile_profile
+            from bodyctl.config.profile import load_profile
+
+            prof = load_profile(args.profile)
+            data = compile_profile(prof)
+            link.push_profile(data, lambda i, n: print(f"  chunk {i}/{n}"))
+            print(
+                f"pushed {args.profile} ({len(data)} bytes, profile '{prof.profile}'); stored on the device"
+            )
+        elif action == "info":
+            h = link.hello()
+            print(f"node {h.node_id}, protocol v{h.value[0]}, firmware {h.payload.decode(errors='replace')}")
+        elif action == "stats":
+            print(link.stats())
+        elif action == "stats-reset":
+            link.command(Command.STATS_RESET)
+        elif action == "calibrate":
+            link.command(Command.CALIBRATE)
+            print("calibrating: stand still, facing the TV, for 2 s")
+        elif action == "marker":
+            link.command(Command.MARKER)
+        elif action == "mode":
+            try:
+                m = Mode[args.mode.upper()]
+            except KeyError:
+                print(f"unknown mode {args.mode!r}; one of {[x.name.lower() for x in Mode]}", file=sys.stderr)
+                return 1
+            link.set_mode(m)
+            print(f"mode {m.name.lower()}")
+    except DeviceError as e:
+        print(f"device: {e}", file=sys.stderr)
+        return 1
+    finally:
+        link.close()
+    return 0
+
+
+def cmd_record(args: argparse.Namespace) -> int:
+    import time
+
+    from bodyctl.tools.record import Recorder, session_path
+
+    link = _open(args)
+    path = session_path(args.out, args.tag)
+    try:
+        hello = link.hello()
+        header = {
+            "port": args.port or f"sim:{args.sim}",
+            "node": {"id": hello.node_id, "fw": hello.payload.decode(errors="replace")},
+            "tag": args.tag,
+        }
+        rec = Recorder(link, path, header)
+        rec.start()
+        print(f"recording to {path} (Ctrl+C to stop)")
+        t0 = time.monotonic()
+        try:
+            while args.seconds is None or time.monotonic() - t0 < args.seconds:
+                time.sleep(0.2)
+        except KeyboardInterrupt:
+            pass
+        rec.stop()
+        print(f"{rec.frames} frames, {len(rec.events)} events -> {path}")
+    finally:
+        link.close()
+    return 0
+
+
 def cmd_dashboard(args: argparse.Namespace) -> int:
-    if not args.port:
-        print("On Tier 0 the dashboard is built into `bodyctl webcam`.", file=sys.stderr)
+    if not args.port and not args.sim:
+        print(
+            "On Tier 0 the dashboard is built into `bodyctl webcam`; give --port or --sim.", file=sys.stderr
+        )
         return 2
-    return _todo("M3")(args)
+    from bodyctl.tools.device_dashboard import run_device_dashboard
+
+    return run_device_dashboard(_open(args), args.out)
 
 
 def cmd_replay(args: argparse.Namespace) -> int:
@@ -112,6 +206,37 @@ def cmd_replay(args: argparse.Namespace) -> int:
         params[name] = float(value)
     for trace in args.trace:
         replay.main_print(Path(trace), params, args.forward, args.calib_ms, args.events)
+    return 0
+
+
+def cmd_chiaki(args: argparse.Namespace) -> int:
+    from bodyctl.output import sdl_mapping as sdl
+
+    vid = args.vid if args.vid is not None else sdl.DEFAULT_VID
+    pid = args.pid if args.pid is not None else sdl.DEFAULT_PID
+    if args.print:
+        print(sdl.mapping(vid=vid, pid=pid))
+        return 0
+    exe = sdl.find_chiaki(args.exe)
+    if exe is None or not exe.exists():
+        print("chiaki-ng not found; pass --exe path\\to\\chiaki.exe", file=sys.stderr)
+        return 1
+    sdl.launch_chiaki(exe, vid, pid)
+    print(f"started {exe} with the Bodyplay SDL mapping")
+    return 0
+
+
+def cmd_plot(args: argparse.Namespace) -> int:
+    from bodyctl.config.compile import flatten_gestures
+    from bodyctl.config.profile import load_profile
+    from bodyctl.tools import replay
+    from bodyctl.tools.plot import plot_event
+
+    trace = Path(args.trace)
+    _, dets = replay.run(trace, flatten_gestures(load_profile(args.profile)))
+    fired = [d.t_us / 1e6 for d in dets if d.event == args.event]
+    out = Path(args.out) if args.out else trace.with_name(f"{trace.stem}_{args.event}.png")
+    print(plot_event(trace, out, fired[:1], args.event))
     return 0
 
 
@@ -210,20 +335,33 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--no-dashboard", action="store_true", help="print events instead of a window")
     sp.add_argument("--verbose", action="store_true", help="dry-run: print every gamepad report")
 
-    sp = add("device", "Talk to a node, dongle or hub over USB serial", _todo("M3"))
+    sp = add("device", "Talk to a node, dongle or hub over USB serial", cmd_device)
     dsub = sp.add_subparsers(dest="device_command", metavar="<action>", required=True)
-    push = dsub.add_parser("push-profile", help="Compile a profile and push it to the device")
-    push.add_argument("--port", required=True, help="COM5 on Windows, /dev/cu.usbmodem* on macOS")
+
+    def device_parser(name: str, help_: str) -> argparse.ArgumentParser:
+        d = dsub.add_parser(name, help=help_, description=help_)
+        _link_args(d)
+        return d
+
+    push = device_parser("push-profile", "Compile a profile and push it to the device (stored in flash)")
     push.add_argument("profile")
-    info = dsub.add_parser("info", help="Show the device's HELLO and link stats")
-    info.add_argument("--port", required=True)
+    device_parser("info", "Show the device's HELLO (firmware version, role)")
+    device_parser("stats", "Print the device's per-stage latency histograms")
+    device_parser("stats-reset", "Clear the device's latency histograms")
+    device_parser("calibrate", "Redo the standing calibration (stand still facing the TV)")
+    device_parser("marker", "Flash the marker LED once (camera framing check)")
+    mode = device_parser("mode", "Switch the game mode (on_foot, car, heli, swim, qte, paused...)")
+    mode.add_argument("mode")
 
-    sp = add("dashboard", "Live view: skeleton or IMU, events, cadence, confidence", cmd_dashboard)
-    sp.add_argument("--port", help="device serial port (omit for the webcam tier)")
+    sp = add("dashboard", "Live view of a device: IMU, events, cadence, lean, pad", cmd_dashboard)
+    _link_args(sp, required=False)
+    sp.add_argument("-o", "--out", default="data/sessions", help="where `r` saves recordings")
 
-    sp = add("record", "Record a session to a .bptrace file", _todo("M3"))
-    sp.add_argument("--port", required=True)
+    sp = add("record", "Record a device session to a .bptrace file", cmd_record)
+    _link_args(sp)
     sp.add_argument("-o", "--out", default="data/sessions")
+    sp.add_argument("--tag", default="session", help="file name prefix, e.g. jump_drill")
+    sp.add_argument("--seconds", type=float, help="stop after this long (default: Ctrl+C)")
 
     sp = add("replay", "Replay a .bptrace through the firmware gesture library and score it", cmd_replay)
     sp.add_argument("trace", nargs="+")
@@ -260,6 +398,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--fixtures", action="store_true", help="regenerate firmware/test/fixtures (native gesture tests)"
     )
 
+    sp = add("plot", "Graph an event in a trace: the dip, where the node fires, take-off", cmd_plot)
+    sp.add_argument("trace")
+    sp.add_argument("--event", default="jump", help="event to centre on (jump, run_start, crouch...)")
+    sp.add_argument("-o", "--out", help="PNG path (default: next to the trace)")
+    sp.add_argument("--profile", default="config/profiles/gta5.yaml")
+
     sp = add("trace", "Inspect a .bptrace file", cmd_trace_info)
     sp.add_argument("trace")
 
@@ -271,9 +415,16 @@ def build_parser() -> argparse.ArgumentParser:
     cmp_ = psub.add_parser("compile", help="Compile to the device binary format")
     cmp_.add_argument("profile")
     cmp_.add_argument("-o", "--out", required=True)
+    cmp_.add_argument("--c-header", action="store_true", help="write a C++ header (built-in default profile)")
     cmp_.set_defaults(func=cmd_profile_compile)
 
-    add("launch-chiaki", "Start chiaki-ng with the SDL mapping for the node's HID gamepad", _todo("M3"))
+    sp = add("launch-chiaki", "Start chiaki-ng with the SDL mapping for the node's HID gamepad", cmd_chiaki)
+    sp.add_argument("--exe", help="path to chiaki-ng (found automatically if installed normally)")
+    sp.add_argument("--print", action="store_true", help="only print the SDL mapping string")
+    sp.add_argument(
+        "--vid", type=lambda v: int(v, 0), default=None, help="USB vendor id (default XIAO 0x2886)"
+    )
+    sp.add_argument("--pid", type=lambda v: int(v, 0), default=None, help="USB product id (default 0x0056)")
     sp = add("hil", "Hardware-in-the-loop: toggle each port and confirm on the PS5", _todo("M4"))
     sp.add_argument("--port", required=True)
     return p

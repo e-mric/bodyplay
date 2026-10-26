@@ -48,6 +48,9 @@ enum Command : uint8_t {
   CMD_STATS = 1,        // reply with LOG lines of per-stage latency histograms
   CMD_STATS_RESET = 2,  // clear the histograms
   CMD_MARKER = 3,       // pulse the marker LED now (Tier 0: the PC's output marker)
+  CMD_RAW_STREAM = 4,   // value[0] = 1 to stream RAW IMU frames (recording), 0 to stop
+  CMD_CALIBRATE = 5,    // redo the standing calibration (stand still, facing the TV)
+  CMD_HELLO = 6,        // reply with HELLO (version, role)
 };
 
 enum EventCode : uint8_t {
@@ -76,6 +79,7 @@ enum StateField : uint8_t {
   ST_BATTERY = 6,   // value[0] = mV
   ST_LINK = 7,      // value[0] = lost packets, value[1] = late packets
   ST_LATENCY = 8,   // value[0] = stage, value[1] = us (clamped to int16)
+  ST_PAD = 9,       // payload = HID gamepad report (padmap/hid_report.h), sent on change
 };
 
 enum Mode : uint8_t {

@@ -51,6 +51,9 @@ class Command(IntEnum):
     STATS = 1
     STATS_RESET = 2
     MARKER = 3
+    RAW_STREAM = 4
+    CALIBRATE = 5
+    HELLO = 6
 
 
 class EventCode(IntEnum):
@@ -79,6 +82,7 @@ class StateField(IntEnum):
     BATTERY = 6
     LINK = 7
     LATENCY = 8
+    PAD = 9
 
 
 class Mode(IntEnum):

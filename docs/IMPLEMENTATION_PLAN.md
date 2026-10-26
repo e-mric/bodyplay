@@ -151,23 +151,25 @@ Every video chapter shows a latency number, so this comes before anything else i
 ## M3 — Tier 1: belt node via PC (Oct 29–Nov 3)
 
 - [ ] Node firmware (`src/node`, role `belt`): LSM6DSOX on I2C at 1 MHz, ODR 1.66 kHz, FIFO read on watermark interrupt; gravity alignment during a 2 s standing calibration.
-- [ ] `lib/gestures` (pure C++, native-tested):
+    - Done in code and building: `src/node/main.cpp` (I/O only) + `lib/nodecore` (calibration → gestures → mapper → HID + CDC, native-tested end to end), `lib/imu` (register setup, FIFO parser). Wiring: `hardware/wiring_tier1.md`. To do: flash a XIAO with the IMU and check it on the dashboard.
+- [x] `lib/gestures` (pure C++, native-tested on synthetic fixtures; real-trace tuning comes with the labeled fixtures below):
     - Step detector: vertical acceleration peaks with refractory period → cadence (EMA of intervals); stop when no step for 1.5× the last interval.
     - Jump: counter-movement dip (below `dip_g` for ≥ `dip_min_ms`) followed by upward reversal with jerk > `push_jerk` → `JUMP`. A dip held > 300 ms without reversal → `CROUCH`.
     - Lean: roll from a complementary filter → deadzone/full-scale mapping.
     - Twist: gyro yaw integrated relative to a neutral that re-zeroes when the user stands still facing the TV for 1 s (counters drift).
-- [ ] USB composite device on the node (TinyUSB via Arduino-ESP32 `USBHIDGamepad` + CDC): the HID report is built on the node from gesture events and the pushed profile; CDC carries packets, RAW stream and profile chunks. HID poll interval 1 ms.
-- [ ] `bodyctl device push-profile` and `bodyctl dashboard` over CDC (`sensors/serial_node.py`).
+- [x] USB composite device on the node (TinyUSB via Arduino-ESP32 `USBHIDGamepad` + CDC): the HID report is built on the node from gesture events and the pushed profile; CDC carries packets, RAW stream and profile chunks. HID poll interval 1 ms.
+- [x] `bodyctl device push-profile` and `bodyctl dashboard` over CDC (`output/device.py`; `--sim trace.bptrace` runs the real node logic without hardware). Also `device info|stats|calibrate|mode|marker`.
 - [ ] Check chiaki-ng picks up the HID gamepad; if not, generate the SDL mapping string and `bodyctl launch-chiaki`. Record the answer in `CLAUDE.md`.
+    - Done in code: `bodyctl launch-chiaki` (+ `--print`), mapping in `pc/bodyctl/output/sdl_mapping.py`. To do: try on the Windows PC (axis indices are a best guess).
 - [ ] Optional wireless: `src/dongle` on a second XIAO (ESP-NOW rx → same HID report code), belt node sends over ESP-NOW. Shares code with M5.
-- [ ] `bodyctl record` / `bodyctl replay`: capture `.bptrace` with video timestamps; replay through the native gesture lib (pybind or a small CLI built from `lib/gestures`).
+- [x] `bodyctl record` / `bodyctl replay`: capture `.bptrace`; replay through the native gesture lib (firmware env `replay`), scored against labels. Live labels from dashboard keys (`docs/tier1.md`); `bodyctl plot` draws the jump-tell graphic. Video-frame timestamps: not yet (the latency rig uses the marker LED instead).
 - [ ] Labeled fixtures: 50 jumps, 50 run starts, 20 crouches, 20 "just shifting weight" → native tests asserting detection rate and false-positive rate.
 - [ ] **Feint drills** recorded alongside: 50 dips without jumping, 30 run starts that stop after one step, 30 weight shifts while standing. These are the hardest negatives and the most valuable fixtures.
 - [ ] Measure with M1.
 
 **Acceptance:** jump detection ≥ 95 % with ≤ 1 false jump per 10 min of normal play on replayed traces; GTA V playable through chiaki-ng with the node as the only input device; Tier 1 latency measured and better than Tier 0.
 
-**Video needs:** close-up of the belt node; trace plot of a jump showing the dip, the reversal and where the event fires (the "boxer tell" graphic).
+**Video needs:** close-up of the belt node; trace plot of a jump showing the dip, the reversal and where the event fires (the "boxer tell" graphic: `uv run bodyctl plot <recording> --event jump`).
 
 ## M4 — Tier 2: hub + Access controller A (Oct 31–Nov 7)
 

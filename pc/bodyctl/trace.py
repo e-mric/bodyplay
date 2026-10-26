@@ -132,6 +132,31 @@ class Trace:
     def labels(self) -> list[Label]:
         return [Label.from_json(r.json()) for r in self.records if r.type == RecordType.LABEL]
 
+    def pc_minus_device_us(self) -> int | None:
+        """Clock offset from RAW frames: the least-delayed frame (receive time minus the
+        device time of its last sample) best approximates pc_clock - device_clock."""
+        best = None
+        for t_rx, p in self.frames():
+            if p.kind != Kind.RAW or p.value[0] <= 0:
+                continue
+            delta = t_rx - (p.t_sensor_us + (p.value[0] - 1) * p.value[1])
+            best = delta if best is None else min(best, delta)
+        return best
+
+    def device_labels(self) -> list[Label]:
+        """Labels on the device clock (live labels from the dashboard are stamped on the PC)."""
+        offset = None
+        out = []
+        for lb in self.labels():
+            if lb.extra.get("clock") == "pc":
+                if offset is None:
+                    offset = self.pc_minus_device_us()
+                if offset is None:
+                    continue
+                lb = Label(lb.event, lb.t_us - offset, {k: v for k, v in lb.extra.items() if k != "clock"})
+            out.append(lb)
+        return out
+
     def raw_samples(self, node_id: int | None = None) -> Iterator[tuple[int, int, RawSample]]:
         """Yields (node_id, t_us, sample) for every RAW sample, timestamped per sample."""
         for _, p in self.frames():
