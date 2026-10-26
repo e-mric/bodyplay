@@ -34,6 +34,9 @@ BELT_PARAM_IDS: dict[str, int] = {
     "twist.rezero_still_ms": 19,
 }
 
+# Mapping guards, not belt detection parameters. Append-only wire IDs.
+ACTION_PARAM_IDS = {"shoot.min_conf": 20, "enter_exit.min_conf": 21}
+
 
 def flatten_gestures(profile: Profile) -> dict[str, float]:
     """Every belt parameter by its firmware name, from the profile (defaults included)."""
@@ -111,6 +114,9 @@ def _binding_bytes(port: str, b: Binding) -> bytes:
 
 def compile_profile(profile: Profile) -> bytes:
     params = belt_params(profile)
+    for name, pid in ACTION_PARAM_IDS.items():
+        gesture, _, field = name.partition(".")
+        params.append((pid, float(getattr(getattr(profile.gestures, gesture), field))))
     ports = sorted(profile.ports.items(), key=lambda kv: PORT_INDEX[kv[0]])
     out = bytearray(PROFILE_MAGIC)
     out += struct.pack(

@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from bodyctl.config.compile import BELT_PARAM_IDS, belt_params, flatten_gestures
+from bodyctl.config.compile import ACTION_PARAM_IDS, BELT_PARAM_IDS, belt_params, flatten_gestures
 from bodyctl.config.profile import load_profile
 from bodyctl.tools import replay
 from bodyctl.tools.synth import FIXTURES_DIR
@@ -74,7 +74,14 @@ def test_compiled_profile_layout():
     data = compile_profile(prof)
     assert data[:4] == PROFILE_MAGIC
     version, n_params, n_ports, n_modes, hold, release = struct.unpack_from("<BBBBHH", data, 4)
-    assert (version, n_params, n_ports, n_modes, hold, release) == (1, len(BELT_PARAM_IDS), 8, 6, 30, 30)
+    assert (version, n_params, n_ports, n_modes, hold, release) == (
+        1,
+        len(BELT_PARAM_IDS) + len(ACTION_PARAM_IDS),
+        8,
+        6,
+        30,
+        30,
+    )
     assert crc8(data[:-1]) == data[-1]
 
 
@@ -99,3 +106,17 @@ def test_plot_jump(tmp_path):
 
     out = plot_event(FIXTURES_DIR / "synth_jump.bptrace", tmp_path / "jump.png", [1.6668])
     assert out.exists() and out.stat().st_size > 10_000
+
+
+def test_compiler_preserves_costly_action_thresholds():
+    import struct
+
+    from bodyctl.config.compile import compile_profile
+
+    prof = load_profile("config/profiles/gta5.yaml")
+    prof.gestures.shoot.min_conf = 0.99
+    prof.gestures.enter_exit.min_conf = 0.95
+    data = compile_profile(prof)
+    params = dict(struct.unpack_from("<Bf", data, 12 + i * 5) for i in range(data[5]))
+    assert params[ACTION_PARAM_IDS["shoot.min_conf"]] == pytest.approx(0.99)
+    assert params[ACTION_PARAM_IDS["enter_exit.min_conf"]] == pytest.approx(0.95)

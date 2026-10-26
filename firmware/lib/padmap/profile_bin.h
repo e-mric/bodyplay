@@ -14,6 +14,8 @@ constexpr int kMaxModes = 12;
 constexpr int kMaxBindings = 8;
 constexpr int kMaxParams = 64;
 constexpr size_t kMaxProfileBytes = 1024;
+constexpr uint8_t kShootMinConfParam = 20;
+constexpr uint8_t kEnterExitMinConfParam = 21;
 
 enum PortType : uint8_t { PORT_STICK = 0, PORT_BUTTON = 1, PORT_TRIGGER = 2 };
 
@@ -100,6 +102,7 @@ struct ProfileBin {
   const ModeDef* mode(uint8_t game_mode) const;
   // Binding for a port in a mode; nullptr = neutral (unlisted).
   const Binding* binding(uint8_t game_mode, uint8_t port) const;
+  bool accepts_event(uint8_t code, uint8_t confidence) const;
 };
 
 }  // namespace bp

@@ -223,6 +223,58 @@ void test_enter_exit_switches_mode_after_the_press() {
   TEST_ASSERT_EQUAL(MODE_CAR, rig.hub.mode());
 }
 
+void test_costly_events_require_confidence_and_state() {
+  for (uint8_t code : {EV_SHOOT, EV_ENTER_EXIT}) {
+    for (uint8_t confidence : {229, 230}) {
+      g_now = 1000;
+      Rig rig;
+      Packet aim = make_packet(NODE_WRIST_R, 1, 0, KIND_EVENT, EV_AIM_START, 255);
+      rig.hub.on_node_frame(reinterpret_cast<uint8_t*>(&aim), sizeof(aim), g_now);
+      Packet p = make_packet(NODE_WRIST_R, 2, 0, KIND_EVENT, code, confidence);
+      rig.hub.on_node_frame(reinterpret_cast<uint8_t*>(&p), sizeof(p), g_now);
+      bool pressed = code == EV_SHOOT ? rig.hub.outputs().dac[1][2] == kMaxCode
+                                      : rig.hub.outputs().relay[2];
+      TEST_ASSERT_EQUAL(confidence == 230, pressed);  // 0.9 * 255 = 229.5
+    }
+  }
+  Rig rig;
+  Packet shoot = make_packet(NODE_WRIST_R, 1, 0, KIND_EVENT, EV_SHOOT, 255);
+  rig.hub.on_node_frame(reinterpret_cast<uint8_t*>(&shoot), sizeof(shoot), g_now);
+  rig.hub.tick();
+  TEST_ASSERT_EQUAL(0, rig.hub.outputs().dac[1][2]);  // high confidence alone isn't enough
+}
+
+void test_exit_requires_fresh_stopped_state_even_before_tick() {
+  for (bool provide_state : {false, true}) {
+    g_now = 1000;
+    Rig rig;
+    Packet mode = make_packet(NODE_PC, 1, 0, KIND_MODE, MODE_CAR);
+    rig.hub.on_pc_frame(reinterpret_cast<uint8_t*>(&mode), sizeof(mode));
+    if (provide_state) {
+      BodyStatePayload b{};
+      Packet state = make_packet(NODE_BELT, 1, 0, KIND_STATE, ST_BODY, 255);
+      uint8_t body[64];
+      size_t n = pack(state, reinterpret_cast<uint8_t*>(&b), sizeof(b), body, sizeof(body));
+      rig.hub.on_node_frame(body, n, g_now);
+      g_now += HubCore::kStateStaleUs + 1;
+    }
+    Packet exit = make_packet(NODE_BELT, 2, 0, KIND_EVENT, EV_ENTER_EXIT, 255);
+    rig.hub.on_node_frame(reinterpret_cast<uint8_t*>(&exit), sizeof(exit), g_now);
+    rig.hub.tick();
+    TEST_ASSERT_FALSE(rig.hub.outputs().relay[2]);
+    TEST_ASSERT_EQUAL(MODE_CAR, rig.hub.mode());
+    // A fresh stationary sample permits the same high-confidence action.
+    BodyStatePayload b{};
+    Packet state = make_packet(NODE_BELT, 3, 0, KIND_STATE, ST_BODY, 255);
+    uint8_t body[64];
+    size_t n = pack(state, reinterpret_cast<uint8_t*>(&b), sizeof(b), body, sizeof(body));
+    rig.hub.on_node_frame(body, n, g_now);
+    exit.seq = 4;
+    rig.hub.on_node_frame(reinterpret_cast<uint8_t*>(&exit), sizeof(exit), g_now);
+    TEST_ASSERT_TRUE(rig.hub.outputs().relay[2]);
+  }
+}
+
 void test_profile_must_fit_wiring_and_commands() {
   auto prof = read_file("gta5.bpprofile");
   ProfileBin p;
@@ -278,6 +330,8 @@ int main(int, char**) {
   RUN_TEST(test_duplicates_dropped_and_counted);
   RUN_TEST(test_stale_body_state_goes_neutral);
   RUN_TEST(test_enter_exit_switches_mode_after_the_press);
+  RUN_TEST(test_costly_events_require_confidence_and_state);
+  RUN_TEST(test_exit_requires_fresh_stopped_state_even_before_tick);
   RUN_TEST(test_profile_must_fit_wiring_and_commands);
   RUN_TEST(test_hil_drives_one_port_and_blocks_body_input);
   RUN_TEST(test_dedup_filter);

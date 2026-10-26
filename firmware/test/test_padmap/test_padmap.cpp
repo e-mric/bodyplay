@@ -8,6 +8,8 @@
 #include <vector>
 
 #include "padmap.h"
+#include "crc8.h"
+#include <math.h>
 #include "param_table.h"
 #include "profile_bin.h"
 #include "protocol.h"
@@ -93,7 +95,9 @@ void test_params_apply_to_belt() {
   ProfileBin p = gta5();
   BeltParams bp_;
   bp_.jump.dip_g = 0;
-  for (int i = 0; i < p.n_params; ++i) TEST_ASSERT_TRUE(belt_param_set(&bp_, p.params[i].id, p.params[i].value));
+  for (int i = 0; i < p.n_params; ++i)
+    if (p.params[i].id < kShootMinConfParam)
+      TEST_ASSERT_TRUE(belt_param_set(&bp_, p.params[i].id, p.params[i].value));
   TEST_ASSERT_FLOAT_WITHIN(1e-6, -0.30f, bp_.jump.dip_g);
   TEST_ASSERT_EQUAL(200, bp_.step.refractory_ms);
 }
@@ -219,8 +223,36 @@ void test_paused_releases_everything() {
   TEST_ASSERT_FALSE(m.set_mode(MODE_PAUSED + 5, 60 * MS));  // unknown mode refused
 }
 
+void test_profile_confidence_guards_and_legacy_defaults() {
+  ProfileBin p = gta5();
+  TEST_ASSERT_FALSE(p.accepts_event(EV_ENTER_EXIT, 229));
+  TEST_ASSERT_TRUE(p.accepts_event(EV_ENTER_EXIT, 230));
+  for (int i = 0; i < p.n_params; ++i)
+    if (p.params[i].id == kEnterExitMinConfParam) p.params[i].value = 0.99f;
+  TEST_ASSERT_FALSE(p.accepts_event(EV_ENTER_EXIT, 250));
+  TEST_ASSERT_TRUE(p.accepts_event(EV_ENTER_EXIT, 253));
+  ProfileBin legacy;
+  TEST_ASSERT_FALSE(legacy.accepts_event(EV_SHOOT, 229));
+  TEST_ASSERT_TRUE(legacy.accepts_event(EV_SHOOT, 230));
+}
+
+void test_invalid_confidence_rejected_with_valid_crc() {
+  for (float invalid : {0.5f, 1.1f, NAN}) {
+    auto bytes = read_fixture("gta5.bpprofile");
+    for (int i = 0; i < bytes[5]; ++i) {
+      size_t off = 12 + 5 * i;
+      if (bytes[off] == kShootMinConfParam) memcpy(bytes.data() + off + 1, &invalid, 4);
+    }
+    bytes.back() = crc8(bytes.data(), bytes.size() - 1);
+    ProfileBin p;
+    TEST_ASSERT_FALSE(p.parse(bytes.data(), bytes.size(), nullptr));
+  }
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
+  RUN_TEST(test_profile_confidence_guards_and_legacy_defaults);
+  RUN_TEST(test_invalid_confidence_rejected_with_valid_crc);
   RUN_TEST(test_parse_gta5);
   RUN_TEST(test_params_apply_to_belt);
   RUN_TEST(test_rejects_corruption);

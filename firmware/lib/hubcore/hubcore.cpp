@@ -47,7 +47,7 @@ float HubCore::State::source(uint8_t src) const {
 
 bool HubCore::State::condition(uint8_t cond) const {
   switch (cond) {
-    case COND_STOPPED: return !belt_fresh || !(belt.flags & BODY_RUNNING);
+    case COND_STOPPED: return belt_fresh && !(belt.flags & BODY_RUNNING);
     case COND_SPRINTING: return belt_fresh && (belt.flags & BODY_SPRINTING);
     case COND_AIMING: return aiming;
     default: return false;
@@ -81,6 +81,8 @@ void HubCore::ack(uint8_t kind, uint16_t seq, int16_t status) {
 }
 
 void HubCore::on_node_frame(const uint8_t* body, size_t len, uint32_t t_rx) {
+  // Check freshness on arrival too: an event can arrive before the next timer tick.
+  if (state_.belt_fresh && t_rx - belt_state_us_ > kStateStaleUs) state_.belt_fresh = false;
   Packet p;
   const uint8_t* payload;
   size_t plen;
@@ -116,7 +118,7 @@ void HubCore::on_node_frame(const uint8_t* body, size_t len, uint32_t t_rx) {
     if (p.code == EV_AIM_START) state_.aiming = true;
     if (p.code == EV_AIM_END) state_.aiming = false;
     uint8_t ev = p.code;
-    update(&ev, 1, t_rx, p.t_sensor_us, synced);
+    if (profile_.accepts_event(ev, p.confidence)) update(&ev, 1, t_rx, p.t_sensor_us, synced);
   }
   // Mirror to the PC dashboard after the outputs are written (off the hot path).
   send(p, payload, plen);

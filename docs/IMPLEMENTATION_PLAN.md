@@ -105,6 +105,7 @@ Development happens on the Mac; chiaki-ng and the Tier 0–1 PC side run on the 
 - [x] `lib/protocol` + Python mirror, COBS/CRC8, round-trip tests on both sides.
 - [x] Profile schema (pydantic) that validates the starter `config/profiles/gta5.yaml`; the schema may reshape the file, but keep its port → PS5 button table.
 - [ ] CI (GitHub Actions, `macos-latest` + `windows-latest`): `pio run` all envs, `pio test -e native`, `uv run pytest`, `ruff`.
+    - Oct 26: fixed the Windows dependency-install hang by excluding the interactive gamepad driver in CI. Python jobs now install PlatformIO so simulator/replay tests run instead of skipping. Both Python jobs pass; the full matrix is still being verified.
 - [x] `hardware/access_port_pinout.md` copied from the design doc, including the axis-order warning.
 - [x] **Synthetic trace generator** (`pc/bodyctl/tools/synth.py`): writes `.bptrace` files of fake IMU signals (standing still, weight shift, clean jump, jump after a long dip, run start, steady run at 1.5/2.5/3.5 steps/s, punch, noisy versions with drift and strap wobble). Lets gesture code and tests start before hardware arrives; replaced by real fixtures in M3 but kept as regression tests.
 
@@ -185,7 +186,7 @@ Every video chapter shows a latency number, so this comes before anything else i
 **Firmware (`src/hub`):**
 
 - [x] Output layer enforcing the clamp and the 30/30 ms rule: `lib/hubout` (DAC codes, port wiring, `build_output`) on top of the shared `PadMapper`/`PressScheduler`; native tests for the clamp, scheduler and ports.
-- [x] Profile receiver (from PC over USB serial), stored in NVS (built-in GTA V profile until one is pushed); mode state machine (`on_foot`, `car`, `bike`, `boat`, `heli`, `plane`, `swim`, `qte`, `paused`), ownership rules. Local enter/exit switches mode after the Triangle press is released; stale body state (> 200 ms) drops the sticks to neutral; PC events are ignored (hard rule 3). `lib/hubcore`, native-tested with a NodeCore tethered to it.
+- [x] Profile receiver (from PC over USB serial), stored in NVS (built-in GTA V profile until one is pushed); mode state machine (`on_foot`, `car`, `bike`, `boat`, `heli`, `plane`, `swim`, `qte`, `paused`), ownership rules. Local enter/exit switches mode after the Triangle press is released; stale body state (> 200 ms) drops the sticks to neutral and cannot satisfy the exit-vehicle stopped gate; hub events must pass the profile confidence threshold (shoot/enter-exit thresholds are included in compiled profiles); PC events are ignored (hard rule 3). `lib/hubcore`, native-tested with a NodeCore tethered to it.
 - [x] Temporary input: belt node wired to the hub over UART (tethered) so M4 doesn't depend on ESP-NOW (`pio run -e node_belt_tether`; node syncs to the hub clock, events + 250 Hz `ST_BODY`).
 - [x] PS5 setup notes in `hardware/ps5_setup.md`: Access controller profile mapping each port, USB communication mode, pairing with the DualSense as one virtual controller (menu names to verify on the console).
 - [ ] Test the open questions: Access stick + DualSense stick on the same function; axis order; record answers in `CLAUDE.md`. Tool ready: `uv run bodyctl hil --port <hub>`.

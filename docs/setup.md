@@ -46,3 +46,12 @@ Two machines: the **Mac** (development: write, build, test, flash) and the **Win
 
 - GTA V on PS5, **Performance** graphics mode, story mode, default controls.
 - TV in **Game Mode**.
+
+## Automated checks
+
+CI runs Python tests and firmware builds on macOS and Windows. It uses
+`uv sync --locked --no-group gamepad` and `uv run --no-group gamepad ...` to
+exclude the Windows driver installer. Gameplay output is tested through the
+dry-run backend; ViGEmBus and chiaki-ng still need the play-PC check above.
+PlatformIO is installed in the Python jobs too, so recorder and replay tests
+exercise the native firmware simulator.

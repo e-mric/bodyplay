@@ -1,8 +1,10 @@
 #include "profile_bin.h"
 
 #include <string.h>
+#include <math.h>
 
 #include "crc8.h"
+#include "protocol.h"
 
 namespace bp {
 
@@ -60,6 +62,12 @@ bool ProfileBin::parse(const uint8_t* data, size_t len, const char** error) {
   for (int i = 0; i < np; ++i) {
     out.params[i].id = r.u8();
     out.params[i].value = r.f32();
+    const auto& pv = out.params[i];
+    if (pv.id == 11 || pv.id == kShootMinConfParam || pv.id == kEnterExitMinConfParam) {
+      float floor = pv.id == 11 ? 0.0f : 0.8f;
+      if (!isfinite(pv.value) || pv.value < floor || pv.value > 1.0f)
+        return fail("invalid event confidence");
+    }
   }
   for (int i = 0; i < nports; ++i) {
     uint8_t port = r.u8(), type = r.u8(), output = r.u8();
@@ -103,6 +111,21 @@ const Binding* ProfileBin::binding(uint8_t game_mode, uint8_t port) const {
   for (int b = 0; b < md->n; ++b)
     if (md->bindings[b].port == port) return &md->bindings[b];
   return nullptr;
+}
+
+bool ProfileBin::accepts_event(uint8_t code, uint8_t confidence) const {
+  uint8_t id;
+  float minimum;
+  switch (code) {
+    case EV_JUMP: id = 11; minimum = 0.6f; break;
+    case EV_SHOOT: id = kShootMinConfParam; minimum = 0.9f; break;
+    case EV_ENTER_EXIT: id = kEnterExitMinConfParam; minimum = 0.9f; break;
+    default: return true;
+  }
+  // Defaults also protect older version-1 profiles without the action parameters.
+  for (int i = 0; i < n_params; ++i)
+    if (params[i].id == id) minimum = params[i].value;
+  return confidence / 255.0f >= minimum;
 }
 
 }  // namespace bp
