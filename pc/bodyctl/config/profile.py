@@ -88,6 +88,23 @@ class EnterExitParams(_Strict):
     min_conf: float = Field(0.9, ge=0.8, le=1, description="Costly action: high confidence required")
 
 
+class WebcamParams(_Strict):
+    """Tier 0 only. Distances are in torso lengths (shoulder center to hip center), so
+    they don't depend on how far you stand from the camera."""
+
+    knee_lift: float = Field(0.12, gt=0, description="Knee rise above its standing level that counts a step")
+    jump_dip: float = Field(0.05, gt=0, description="Hip drop below standing level that starts a jump dip")
+    jump_rise_speed: float = Field(0.8, gt=0, description="Upward hip speed (torso/s) marking the reversal")
+    jump_refractory_ms: int = Field(600, ge=0, description="Ignore new jumps this long after one")
+    punch_speed: float = Field(4.0, gt=0, description="Shoulder-to-wrist growth rate (torso/s) for a punch")
+    punch_elbow_deg: float = Field(120, ge=0, le=180, description="Elbow must open past this angle")
+    punch_refractory_ms: int = Field(300, ge=0, description="Per arm")
+    aim_forward: float = Field(0.4, gt=0, description="Right wrist this far in front of the shoulder")
+    aim_height: float = Field(0.35, gt=0, description="Right wrist within this of shoulder height")
+    aim_hold_ms: int = Field(120, ge=0, description="Pose held this long before aiming starts")
+    min_visibility: float = Field(0.5, ge=0, le=1, description="Ignore landmarks MediaPipe isn't sure of")
+
+
 class Gestures(_Strict):
     step: StepParams = StepParams()
     cadence_curve: list[float] = Field(
@@ -103,6 +120,7 @@ class Gestures(_Strict):
     shoot: ShootParams = ShootParams()
     punch: PunchParams = PunchParams()
     enter_exit: EnterExitParams = EnterExitParams()
+    webcam: WebcamParams = WebcamParams()
 
     @field_validator("cadence_curve")
     @classmethod

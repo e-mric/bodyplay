@@ -24,6 +24,12 @@ gestures:
   shoot:  {emg_k_baseline: 3.0, min_conf: 0.9}
   punch:  {accel_g: 2.0, min_conf: 0.6}
   enter_exit: {two_cue_window_ms: 150, min_conf: 0.9}
+  webcam:                       # Tier 0 only; distances in torso lengths
+    knee_lift: 0.12
+    jump_dip: 0.05
+    jump_rise_speed: 0.8
+    punch_speed: 4.0
+    aim_forward: 0.4
 
 # Each port emits ONE fixed PS5 button, configured once in the PS5's
 # Access controller profile. Modes below only choose which gesture drives it.

@@ -131,7 +131,8 @@ Every video chapter shows a latency number, so this comes before anything else i
 ## M2 — Tier 0: webcam (Oct 25–Nov 1)
 
 - [ ] `sensors/webcam_pose.py`: OpenCV capture at the camera's max fps (prefer 60), MediaPipe Pose landmarks, timestamps per frame.
-- [ ] `gestures/webcam.py` (Tier 0 only):
+    - Done in code (MediaPipe 1.x Tasks API, `PoseLandmarker` in VIDEO mode, model fetched to `data/models/` on first run). To do: first run with a real webcam on the Windows PC (the Mac mini has no camera).
+- [x] `gestures/webcam.py` (Tier 0 only; tested on synthetic poses in `pc/tests/posegen.py`, thresholds in the profile's `gestures.webcam`):
     - Run: alternating knee-height peaks → cadence → stick Y through the profile's curve.
     - Jump: hip landmark dips below standing baseline then accelerates upward → fire on reversal.
     - Punch: wrist-to-shoulder distance grows fast with the elbow extending.
@@ -139,7 +140,8 @@ Every video chapter shows a latency number, so this comes before anything else i
     - Lean: shoulder-line angle → stick X.
 - [ ] Install ViGEmBus via `vgamepad`; confirm chiaki-ng lists the virtual Xbox 360 pad and that it drives the PS5 (record the answer in `CLAUDE.md`).
 - [ ] Map to the virtual gamepad via the profile; run with chiaki-ng on GTA V.
-- [ ] Dashboard (`bodyctl dashboard`): skeleton overlay, live events, cadence, confidence bars.
+    - Done in code: `bodyctl.mapping.BindingEngine`, `bodyctl.output.gamepad` (press scheduler for hard rule 8, `vgamepad` and `dry-run` backends), `bodyctl webcam`. To do: run on the Windows PC with chiaki-ng.
+- [x] Dashboard: skeleton overlay, live events, cadence, confidence bars (built into `bodyctl webcam`; corner flash doubles as the fallback output marker; keys: m mode, p pause, r reset stats).
 - [ ] Measure with M1: 20 trials each for jump and run start.
 
 **Acceptance:** 20-minute GTA V session on foot using only the webcam; latency CSV saved for the video.

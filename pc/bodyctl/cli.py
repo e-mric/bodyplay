@@ -61,6 +61,29 @@ def cmd_synth(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_webcam(args: argparse.Namespace) -> int:
+    from bodyctl.config.profile import load_profile
+    from bodyctl.output.gamepad import Gamepad, open_backend
+    from bodyctl.output.marker import open_marker
+    from bodyctl.tier0 import run_webcam
+
+    prof = load_profile(args.profile)
+    w, _, h = args.size.partition("x")
+    backend = open_backend(args.backend, verbose=args.verbose)
+    gamepad = Gamepad(backend, prof.press.hold_ms, prof.press.release_ms, open_marker(args.marker_port))
+    print(f"profile {prof.profile}, gamepad backend {type(backend).__name__}")
+    return run_webcam(
+        prof, gamepad, args.camera, (int(w), int(h)), args.fps, args.model, show=not args.no_dashboard
+    )
+
+
+def cmd_dashboard(args: argparse.Namespace) -> int:
+    if not args.port:
+        print("On Tier 0 the dashboard is built into `bodyctl webcam`.", file=sys.stderr)
+        return 2
+    return _todo("M3")(args)
+
+
 def cmd_latency_video(args: argparse.Namespace) -> int:
     from bodyctl.tools import latency_video as lv
 
@@ -140,9 +163,21 @@ def build_parser() -> argparse.ArgumentParser:
         sp.set_defaults(func=handler)
         return sp
 
-    sp = add("webcam", "Tier 0: webcam pose -> gestures -> virtual gamepad", _todo("M2"))
+    sp = add("webcam", "Tier 0: webcam pose -> gestures -> virtual gamepad", cmd_webcam)
     sp.add_argument("--profile", default="config/profiles/gta5.yaml")
-    sp.add_argument("--backend", choices=["vgamepad", "uinput", "dry-run"], default=None)
+    sp.add_argument(
+        "--backend",
+        choices=["vgamepad", "dry-run"],
+        default=None,
+        help="virtual pad (default: vgamepad on Windows, dry-run elsewhere)",
+    )
+    sp.add_argument("--camera", type=int, default=0, help="camera index")
+    sp.add_argument("--size", default="640x480", help="capture size WxH")
+    sp.add_argument("--fps", type=int, default=60, help="requested camera frame rate")
+    sp.add_argument("--model", choices=["lite", "full", "heavy"], default="lite", help="pose model")
+    sp.add_argument("--marker-port", help="serial port of the marker LED board (firmware env marker)")
+    sp.add_argument("--no-dashboard", action="store_true", help="print events instead of a window")
+    sp.add_argument("--verbose", action="store_true", help="dry-run: print every gamepad report")
 
     sp = add("device", "Talk to a node, dongle or hub over USB serial", _todo("M3"))
     dsub = sp.add_subparsers(dest="device_command", metavar="<action>", required=True)
@@ -152,7 +187,7 @@ def build_parser() -> argparse.ArgumentParser:
     info = dsub.add_parser("info", help="Show the device's HELLO and link stats")
     info.add_argument("--port", required=True)
 
-    sp = add("dashboard", "Live view: skeleton or IMU, events, cadence, confidence", _todo("M2"))
+    sp = add("dashboard", "Live view: skeleton or IMU, events, cadence, confidence", cmd_dashboard)
     sp.add_argument("--port", help="device serial port (omit for the webcam tier)")
 
     sp = add("record", "Record a session to a .bptrace file", _todo("M3"))

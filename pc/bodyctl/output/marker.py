@@ -42,5 +42,20 @@ class SerialMarker:
         self._ser.close()
 
 
+class MultiMarker:
+    """Fans one pulse out to several markers (e.g. the LED board and the screen flash)."""
+
+    def __init__(self, *markers: Marker):
+        self.markers = markers
+
+    def pulse(self) -> None:
+        for m in self.markers:
+            m.pulse()
+
+    def close(self) -> None:
+        for m in self.markers:
+            m.close()
+
+
 def open_marker(port: str | None) -> Marker:
     return SerialMarker(port) if port else NullMarker()
