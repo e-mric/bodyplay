@@ -3,6 +3,8 @@
 #   https://www.gtaboom.com/gta-5-controls-pc-keyboard-playstation-and-xbox/
 # Test in Performance mode (60 fps target).
 #
+# Schema and documented defaults: pc/bodyctl/config/profile.py
+# Check with: uv run bodyctl profile check config/profiles/gta5.yaml
 # Thresholds are starting values to tune per user, not measured constants.
 
 profile: gta5
@@ -35,42 +37,54 @@ ports:
   B-E3: {type: trigger, ps5: l2}          # aim / brake / throttle down
   B-E4: {type: button,  ps5: circle}      # light melee (also reload)
 
+# Ports a mode doesn't list are released / centered in that mode.
 modes:
   on_foot:
-    A-E1: {y: run_cadence, x: lean}
-    A-E2: {pulse: step_rhythm, when: cadence_above_sprint}   # tap X with each step
-    A-E3: {event: jump}
-    A-E4: {event: enter_exit}
-    B-E1: {x: twist}
-    B-E2: {event: shoot, requires: aiming, as: full_pull}
-    B-E3: {hold: aiming, as: full_pull}
-    B-E4: {event: punch}
+    ports:
+      A-E1: {y: run_cadence, x: lean}
+      A-E2: {pulse: step_rhythm, when: cadence_above_sprint}   # tap X with each step
+      A-E3: {event: jump}
+      A-E4: {event: enter_exit}
+      B-E1: {x: twist}
+      B-E2: {event: shoot, requires: aiming, as: full_pull}
+      B-E3: {hold: aiming, as: full_pull}
+      B-E4: {event: punch}
 
   swim:
-    A-E1: {y: stroke_rhythm, x: lean}
-    A-E2: {pulse: stroke_rhythm}
-    A-E4: {event: enter_exit}
-    B-E1: {x: twist}
+    ports:
+      A-E1: {y: stroke_rhythm, x: lean}
+      A-E2: {pulse: stroke_rhythm}
+      A-E4: {event: enter_exit}
+      B-E1: {x: twist}
 
-  car:                       # also bike and boat; the DualSense steers
-    A-E1: neutral
-    A-E4: {event: enter_exit, requires: stopped}
-    B-E1: neutral
-    B-E2: {analog: run_cadence}          # accelerate
-    B-E3: {analog: step_back_or_lean_back}  # brake / reverse
-    B-E4: neutral
+  car:                       # the DualSense steers
+    also: [bike, boat]
+    vehicle: true
+    ports:
+      A-E1: neutral
+      A-E4: {event: enter_exit, requires: stopped}
+      B-E1: neutral
+      B-E2: {analog: run_cadence}             # accelerate
+      B-E3: {analog: step_back_or_lean_back}  # brake / reverse
+      B-E4: neutral
 
-  aircraft:                  # plane and helicopter; the DualSense flies (stick, L1/R1 yaw)
-    A-E1: neutral
-    A-E4: {event: enter_exit, requires: stopped}
-    B-E1: neutral
-    B-E2: {analog: run_cadence}          # throttle up
-    B-E3: {analog: step_back_or_lean_back}  # throttle down
-    B-E4: neutral
+  heli:                      # helicopter and plane; the DualSense flies (stick, L1/R1 yaw)
+    also: [plane]
+    vehicle: true
+    ports:
+      A-E1: neutral
+      A-E4: {event: enter_exit, requires: stopped}
+      B-E1: neutral
+      B-E2: {analog: run_cadence}             # throttle up
+      B-E3: {analog: step_back_or_lean_back}  # throttle down
+      B-E4: neutral
 
   qte:
-    A-E2: {pulse: fast_feet, max_hz: 15}  # mash prompts
-    # timed single prompts: any sharp gesture presses the prompted port (set by the PC side path)
+    ports:
+      A-E2: {pulse: fast_feet, max_hz: 15}    # mash prompts
+      # timed single prompts: any sharp gesture presses the prompted port (set by the PC side path)
+
+  paused: {}                 # cutscenes, menus, phone: everything released
 
 # Left to the DualSense: R1 cover / handbrake, L3 stealth / horn, L1 weapon wheel,
 # D-pad phone, R3 look behind, aircraft yaw and landing gear, menus.

@@ -57,9 +57,11 @@ docs/                  plans
 ## Commands (create them in M0; keep this list current)
 
 - Firmware: `pio run -e node_belt`, `pio run -e node_wrist`, `pio run -e dongle`, `pio run -e hub`, `pio run -e <env> -t upload`, `pio test -e native`
-- PC: `uv sync`, `uv run pytest`, `uv run ruff check .`
+- PC: `uv sync`, `uv run pytest`, `uv run ruff check .`, `uv run ruff format .` (the uv project is the root `pyproject.toml`; the package lives in `pc/bodyctl`)
 - Run: `uv run bodyctl webcam` (Tier 0), `uv run bodyctl device push-profile --port COM5 config/profiles/gta5.yaml` (Tier 1 node/dongle and Tier 2+ hub; `/dev/cu.usbmodem*` on macOS), `uv run bodyctl dashboard --port COM5`
 - Tools: `uv run bodyctl record`, `uv run bodyctl replay <trace>`, `uv run bodyctl latency-video <video.mp4>`
+- Profiles and traces: `uv run bodyctl profile check config/profiles/gta5.yaml`, `uv run bodyctl synth -o data/synth`, `uv run bodyctl trace <file.bptrace>`
+- `pio` on the Mac comes from the PlatformIO VS Code extension: `~/.platformio/penv/bin/pio` (see `docs/setup.md`)
 
 ## Hard rules (do not break; ask before changing)
 

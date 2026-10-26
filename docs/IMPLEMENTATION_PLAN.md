@@ -98,15 +98,15 @@ Development happens on the Mac; chiaki-ng and the Tier 0–1 PC side run on the 
 
 ## M0 — Repo and foundations (Oct 25)
 
-- [ ] PlatformIO project with envs `node_belt`, `node_wrist`, `dongle`, `hub`, `native`; Arduino-ESP32 core 3.x pinned. Native tests must build on macOS (dev) and Windows (play PC).
-- [ ] `pc/` uv project with ruff, pytest, pydantic; CLI entry point `bodyctl` (Typer or argparse). Serial ports passed as arguments (`COMx` on Windows, `/dev/cu.usbmodem*` on macOS).
-- [ ] `.gitattributes` forcing LF on source, YAML and fixtures.
-- [ ] `docs/setup.md`: macOS dev setup (VS Code + PlatformIO, uv, flashing the XIAO) and Windows play-PC setup (uv, chiaki-ng install and PS5 pairing, ViGEmBus install, running `bodyctl` from a git checkout).
-- [ ] `lib/protocol` + Python mirror, COBS/CRC8, round-trip tests on both sides.
-- [ ] Profile schema (pydantic) that validates the starter `config/profiles/gta5.yaml`; the schema may reshape the file, but keep its port → PS5 button table.
+- [x] PlatformIO project with envs `node_belt`, `node_wrist`, `dongle`, `hub`, `native`; Arduino-ESP32 core 3.x pinned. Native tests must build on macOS (dev) and Windows (play PC).
+- [x] `pc/` uv project with ruff, pytest, pydantic; CLI entry point `bodyctl` (Typer or argparse). Serial ports passed as arguments (`COMx` on Windows, `/dev/cu.usbmodem*` on macOS).
+- [x] `.gitattributes` forcing LF on source, YAML and fixtures.
+- [x] `docs/setup.md`: macOS dev setup (VS Code + PlatformIO, uv, flashing the XIAO) and Windows play-PC setup (uv, chiaki-ng install and PS5 pairing, ViGEmBus install, running `bodyctl` from a git checkout).
+- [x] `lib/protocol` + Python mirror, COBS/CRC8, round-trip tests on both sides.
+- [x] Profile schema (pydantic) that validates the starter `config/profiles/gta5.yaml`; the schema may reshape the file, but keep its port → PS5 button table.
 - [ ] CI (GitHub Actions, `macos-latest` + `windows-latest`): `pio run` all envs, `pio test -e native`, `uv run pytest`, `ruff`.
-- [ ] `hardware/access_port_pinout.md` copied from the design doc, including the axis-order warning.
-- [ ] **Synthetic trace generator** (`pc/bodyctl/tools/synth.py`): writes `.bptrace` files of fake IMU signals (standing still, weight shift, clean jump, jump after a long dip, run start, steady run at 1.5/2.5/3.5 steps/s, punch, noisy versions with drift and strap wobble). Lets gesture code and tests start before hardware arrives; replaced by real fixtures in M3 but kept as regression tests.
+- [x] `hardware/access_port_pinout.md` copied from the design doc, including the axis-order warning.
+- [x] **Synthetic trace generator** (`pc/bodyctl/tools/synth.py`): writes `.bptrace` files of fake IMU signals (standing still, weight shift, clean jump, jump after a long dip, run start, steady run at 1.5/2.5/3.5 steps/s, punch, noisy versions with drift and strap wobble). Lets gesture code and tests start before hardware arrives; replaced by real fixtures in M3 but kept as regression tests.
 
 **Acceptance:** CI green on an empty-but-wired skeleton; `bodyctl --help` lists the planned commands.
 
