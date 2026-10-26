@@ -39,6 +39,18 @@ def cmd_profile_check(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_profile_compile(args: argparse.Namespace) -> int:
+    from bodyctl.config.compile import compile_profile
+    from bodyctl.config.profile import load_profile
+
+    data = compile_profile(load_profile(args.profile))
+    out = Path(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_bytes(data)
+    print(f"{out}: {len(data)} bytes")
+    return 0
+
+
 def cmd_synth(args: argparse.Namespace) -> int:
     from bodyctl.tools import synth
 
@@ -259,7 +271,7 @@ def build_parser() -> argparse.ArgumentParser:
     cmp_ = psub.add_parser("compile", help="Compile to the device binary format")
     cmp_.add_argument("profile")
     cmp_.add_argument("-o", "--out", required=True)
-    cmp_.set_defaults(func=_todo("M3"))
+    cmp_.set_defaults(func=cmd_profile_compile)
 
     add("launch-chiaki", "Start chiaki-ng with the SDL mapping for the node's HID gamepad", _todo("M3"))
     sp = add("hil", "Hardware-in-the-loop: toggle each port and confirm on the PS5", _todo("M4"))

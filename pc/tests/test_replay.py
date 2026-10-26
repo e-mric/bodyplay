@@ -53,3 +53,26 @@ def test_replay_fixture_end_to_end(fixture):
     scores = replay.score(dets, labels, after_us=cal)
     for s in scores:
         assert s.missed == 0 and s.false_positives == 0, s
+
+
+def test_committed_profile_fixture_is_fresh():
+    """firmware/test/fixtures/gta5.bpprofile feeds the C++ parser tests; regenerate with
+    `uv run bodyctl profile compile config/profiles/gta5.yaml -o firmware/test/fixtures/gta5.bpprofile`."""
+    from bodyctl.config.compile import compile_profile
+
+    fresh = compile_profile(load_profile("config/profiles/gta5.yaml"))
+    assert (FIXTURES_DIR / "gta5.bpprofile").read_bytes() == fresh
+
+
+def test_compiled_profile_layout():
+    import struct
+
+    from bodyctl.config.compile import PROFILE_MAGIC, compile_profile
+    from bodyctl.protocol import crc8
+
+    prof = load_profile("config/profiles/gta5.yaml")
+    data = compile_profile(prof)
+    assert data[:4] == PROFILE_MAGIC
+    version, n_params, n_ports, n_modes, hold, release = struct.unpack_from("<BBBBHH", data, 4)
+    assert (version, n_params, n_ports, n_modes, hold, release) == (1, len(BELT_PARAM_IDS), 8, 6, 30, 30)
+    assert crc8(data[:-1]) == data[-1]
