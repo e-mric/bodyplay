@@ -146,6 +146,8 @@ Every video chapter shows a latency number, so this comes before anything else i
     - Done in code: `bodyctl.mapping.BindingEngine`, `bodyctl.output.gamepad` (press scheduler for hard rule 8, `vgamepad` and `dry-run` backends), `bodyctl webcam`. To do: run on the Windows PC with chiaki-ng.
 - [x] Dashboard: skeleton overlay, live events, cadence, confidence bars (built into `bodyctl webcam`; corner flash doubles as the fallback output marker; keys: m mode, p pause, r reset stats).
 - [ ] Measure with M1: 20 trials each for jump and run start.
+- [ ] Tune Tier 0 thresholds on real drills: `bodyctl webcam-drill` (cued reps per move, camera-placement guide, several angles) and `bodyctl webcam-tune` (grid search per gesture group, hits − 2 × false; writes a local tuned profile).
+    - Done in code and tested on synthetic poses (`pc/tests/test_drill.py`). To do: record every move at front, right30 and left30 on the Windows PC; move values that hold across angles into `gta5.yaml`.
 
 **Acceptance:** 20-minute GTA V session on foot using only the webcam; latency CSV saved for the video.
 

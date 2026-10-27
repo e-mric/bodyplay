@@ -94,6 +94,83 @@ def cmd_webcam(args: argparse.Namespace) -> int:
     )
 
 
+def cmd_webcam_drill(args: argparse.Namespace) -> int:
+    from bodyctl.tools.drill import ANGLES, MOVES, run_drill
+    from bodyctl.tools.webcam_tune import default_profile
+
+    moves = list(MOVES) if "all" in args.moves else list(dict.fromkeys(args.moves))
+    angles = [a.strip() for a in args.angles.split(",") if a.strip()]
+    bad = [a for a in angles if a not in ANGLES]
+    if bad:
+        print(f"unknown angle(s) {bad}; choose from {', '.join(ANGLES)}", file=sys.stderr)
+        return 1
+    profile = args.profile or default_profile()
+    w, _, h = args.size.partition("x")
+    for angle in angles:
+        path = run_drill(
+            moves,
+            args.reps,
+            profile,
+            args.camera,
+            (int(w), int(h)),
+            args.fps,
+            args.model,
+            args.out,
+            video=args.video,
+            sound=not args.no_sound,
+            angle=angle,
+        )
+        if path is None:
+            print("quit")
+            return 1
+    print("next: uv run bodyctl webcam-tune   (tunes on every recording in data/drills)")
+    return 0
+
+
+def cmd_webcam_tune(args: argparse.Namespace) -> int:
+    from bodyctl.config.profile import load_profile
+    from bodyctl.tools import webcam_tune as wt
+    from bodyctl.tools.drill import Recording
+
+    paths = [Path(p) for p in args.recordings] or sorted(wt.DRILLS_DIR.glob("*.npz"))
+    if not paths:
+        print(f"no recordings in {wt.DRILLS_DIR}: run `bodyctl webcam-drill` first", file=sys.stderr)
+        return 1
+    base = Path(args.profile) if args.profile else wt.default_profile()
+    gestures = load_profile(base).gestures
+    try:
+        gestures = wt.set_params(gestures, {k: float(v) for k, _, v in (s.partition("=") for s in args.set)})
+    except (KeyError, ValueError) as e:
+        print(f"bad --set {e}; use e.g. webcam.knee_lift=0.1", file=sys.stderr)
+        return 1
+    recs = [Recording.load(p) for p in paths]
+    frames = sum(len(r.t_us) for r in recs)
+    print(f"{len(recs)} recording(s), {frames} frames, profile {base.as_posix()}")
+    print("\ncurrent thresholds:")
+    print(wt.format_scores(wt.score(recs, gestures)))
+    print(wt.format_per_angle(recs, gestures))
+    if args.score_only:
+        return 0
+    print()
+    best, results = wt.search(recs, gestures)
+    sc = wt.score(recs, best)
+    lean = {
+        k: (wt.get_param(best, k), v)
+        for k, v in wt.suggest_lean(sc.lean, best.lean).items()
+        if v != wt.get_param(best, k)
+    }
+    best = wt.set_params(best, {k: new for k, (_, new) in lean.items()})
+    print("\n" + wt.format_search(results, lean))
+    print("\ntuned thresholds:")
+    print(wt.format_scores(wt.score(recs, best)))
+    print(wt.format_per_angle(recs, best))
+    out = wt.write_profile(base, best, Path(args.out), paths)
+    print(f"\nwrote {out.as_posix()}")
+    print("test it: uv run bodyctl webcam-drill <move> --reps 5   (drills use the tuned profile)")
+    print(f"play:    uv run bodyctl webcam --profile {out.as_posix()}")
+    return 0
+
+
 def _link_args(p: argparse.ArgumentParser, required: bool = True) -> None:
     g = p.add_mutually_exclusive_group(required=required)
     g.add_argument("--port", help="COM5 on Windows, /dev/cu.usbmodem* on macOS")
@@ -366,6 +443,38 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--marker-port", help="serial port of the marker LED board (firmware env marker)")
     sp.add_argument("--no-dashboard", action="store_true", help="print events instead of a window")
     sp.add_argument("--verbose", action="store_true", help="dry-run: print every gamepad report")
+
+    sp = add(
+        "webcam-drill",
+        "Tier 0: record a move N times with on-screen cues, from one or more camera angles",
+        cmd_webcam_drill,
+    )
+    sp.add_argument(
+        "moves", nargs="+", choices=["run", "jump", "crouch", "lean", "punch", "aim", "all"], metavar="MOVE"
+    )
+    sp.add_argument("--reps", type=int, default=8, help="repetitions of each move")
+    sp.add_argument(
+        "--angles",
+        default="front",
+        help="camera placements, comma separated: front, right30, left30, right45, left45",
+    )
+    sp.add_argument("--profile", help="thresholds for live feedback (default: tuned profile if any)")
+    sp.add_argument("--camera", type=int, default=0, help="camera index")
+    sp.add_argument("--size", default="640x480", help="capture size WxH")
+    sp.add_argument("--fps", type=int, default=30, help="requested camera frame rate")
+    sp.add_argument("--model", choices=["lite", "full", "heavy"], default="lite", help="pose model")
+    sp.add_argument("-o", "--out", default="data/drills")
+    sp.add_argument("--video", action="store_true", help="also save the camera video (.mp4)")
+    sp.add_argument("--no-sound", action="store_true", help="no beep on each cue")
+
+    sp = add("webcam-tune", "Tier 0: tune gesture thresholds on drill recordings", cmd_webcam_tune)
+    sp.add_argument("recordings", nargs="*", help="drill .npz files (default: all in data/drills)")
+    sp.add_argument("--profile", help="starting thresholds (default: tuned profile if any, else gta5.yaml)")
+    sp.add_argument("-o", "--out", default="data/profiles/gta5_tuned.yaml")
+    sp.add_argument(
+        "--set", action="append", default=[], metavar="NAME=VALUE", help="e.g. webcam.knee_lift=0.1"
+    )
+    sp.add_argument("--score-only", action="store_true", help="score the current thresholds, don't search")
 
     sp = add("device", "Talk to a node, dongle or hub over USB serial", cmd_device)
     dsub = sp.add_subparsers(dest="device_command", metavar="<action>", required=True)

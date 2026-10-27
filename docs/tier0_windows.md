@@ -58,7 +58,30 @@ Xbox buttons (Cross → A, Square → X, Circle → B, Triangle → Y).
 Dashboard keys only work while its window has focus: **p** pauses body input,
 **m** changes mode, **q** quits. Alt-tab to the dashboard before using those keys.
 
-## 4. What to report from the first test
+## 4. Tune the gestures to your body and camera
+
+Record each move several times with on-screen cues, tune the thresholds on the
+recordings, then repeat the drill to test them:
+
+```text
+uv run bodyctl webcam-drill jump --reps 8
+uv run bodyctl webcam-tune
+uv run bodyctl webcam-drill jump --reps 5
+```
+
+Moves: `run`, `jump`, `crouch`, `lean`, `punch`, `aim`, or `all`. Before each
+recording, a setup screen guides the camera: whole body in view, distance, camera
+level, and the camera angle. Always face the screen and move the camera. To make
+gestures work wherever the camera ends up, record from several angles:
+`--angles front,right30,left30` (also `right45`, `left45`).
+
+During a drill, a beep and a green banner mark each cue; detections show in green
+when expected and red when not. The drill scores itself at the end. Recordings go
+to `data/drills/`. `webcam-tune` uses all of them and writes
+`data/profiles/gta5_tuned.yaml`; drills use that file automatically. Play with
+`uv run bodyctl webcam --profile data/profiles/gta5_tuned.yaml`.
+
+## 5. What to report from the first test
 
 - Did the phone image and skeleton appear? What camera index and fps were shown?
 - Did `joy.cpl` show the pad and respond to movement?
