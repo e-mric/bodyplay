@@ -52,7 +52,31 @@ class BindingEngine:
                 gp.set_stick(pdef.ps5, x, y)
             else:
                 self._button(port, pdef.ps5, pdef.type, b, state, names, now_us)
+        self._tier0(state, names, now_us)
         gp.update(now_us)
+
+    def _in_modes(self, modes: list[str]) -> bool:
+        return any(self.profile.mode_for(m) is self.profile.mode_for(self.mode) for m in modes)
+
+    def _tier0(self, state: State, events: list[str], now_us: int) -> None:
+        """Virtual-pad-only controls (profile `tier0`), applied after the ports so the
+        wheel's stick overrides the port binding while the wheel is open."""
+        extras, gp = self.profile.tier0, self.gamepad
+        wheel = extras.weapon_wheel
+        if wheel is not None:
+            open_ = self._in_modes(wheel.modes) and state.condition("wheel_open")
+            gp.hold(wheel.hold, open_, now_us)
+            if open_:
+                gp.set_stick(wheel.select, state.source("wheel_x"), state.source("wheel_y"))
+        flight = extras.flight
+        if flight is not None and self._in_modes(flight.modes) and state.condition("flying"):
+            # Rule 4's one exception: the body flies (the port binding keeps the stick neutral).
+            gp.set_stick(flight.stick, state.source("fly_roll"), state.source("fly_pitch"))
+        cover = extras.cover
+        if cover is not None and self._in_modes(cover.modes):
+            for name in events:
+                if name in ("crouch", "stand"):
+                    gp.press(cover.tap, now_us)
 
     def _button(
         self, port: str, ctl: str, ptype: PortType, b: Binding, state: State, events: list[str], now_us: int

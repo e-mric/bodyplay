@@ -19,12 +19,12 @@ jobs:
           enable-cache: true
       # vgamepad's Windows source build starts an interactive driver installer.
       # CI exercises the dry-run backend; install ViGEmBus on the play PC only.
-      - run: uv sync --locked --no-group gamepad
+      - run: uv sync --locked --no-group gamepad --no-group rtmpose
       - run: uv tool install platformio
-      - run: uv run --no-group gamepad ruff check .
-      - run: uv run --no-group gamepad ruff format --check .
-      - run: uv run --no-group gamepad pytest
-      - run: uv run --no-group gamepad bodyctl --help
+      - run: uv run --no-group gamepad --no-group rtmpose ruff check .
+      - run: uv run --no-group gamepad --no-group rtmpose ruff format --check .
+      - run: uv run --no-group gamepad --no-group rtmpose pytest
+      - run: uv run --no-group gamepad --no-group rtmpose bodyctl --help
 
   firmware:
     timeout-minutes: 30

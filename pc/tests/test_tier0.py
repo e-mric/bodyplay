@@ -136,6 +136,6 @@ def test_startup_and_capture_failures_close_acquired_resources(monkeypatch, fail
     monkeypatch.setattr(webcam_pose, "Camera", Camera)
     profile = load_profile("config/profiles/gta5.yaml")
     with pytest.raises(OSError, match=f"{failure} failed"):
-        run_webcam(profile, Gamepad(Backend(), 30, 30), show=False)
+        run_webcam(profile, Gamepad(Backend(), 30, 30), show=False, pose="mediapipe")
     expected = {"model": ["pad"], "camera": ["model", "pad"], "read": ["camera", "model", "pad"]}
     assert closed == expected[failure]

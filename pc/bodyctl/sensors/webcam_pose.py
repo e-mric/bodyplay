@@ -21,6 +21,33 @@ MODEL_URL = (
     "pose_landmarker_{v}/float16/latest/pose_landmarker_{v}.task"
 )
 MODEL_VARIANTS = ("lite", "full", "heavy")
+POSE_BACKENDS = ("auto", "mediapipe", "rtmpose")
+
+
+def resolve_pose(pose: str) -> str:
+    """auto -> rtmpose when rtmlib and a CUDA GPU are available, else mediapipe."""
+    if pose == "auto":
+        from bodyctl.sensors import rtmpose
+
+        return "rtmpose" if rtmpose.available() else "mediapipe"
+    if pose not in POSE_BACKENDS:
+        raise ValueError(f"pose backend must be one of {POSE_BACKENDS}")
+    return pose
+
+
+def pose_label(pose: str, model: str = "lite") -> str:
+    """Name stored with recordings, e.g. rtmpose-m or mediapipe-lite."""
+    return "rtmpose-m" if resolve_pose(pose) == "rtmpose" else f"mediapipe-{model}"
+
+
+def open_pose(pose: str = "auto", model: str = "lite"):
+    """A pose estimator (detect(frame, t_us) -> Pose | None, close()) and its label.
+    `model` picks the MediaPipe variant; RTMPose always uses RTMPose-m."""
+    if resolve_pose(pose) == "rtmpose":
+        from bodyctl.sensors.rtmpose import RTMPoseEstimator
+
+        return RTMPoseEstimator(), "rtmpose-m"
+    return PoseEstimator(ensure_model(model)), f"mediapipe-{model}"
 
 
 def now_us() -> int:

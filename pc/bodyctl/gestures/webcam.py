@@ -44,7 +44,8 @@ class Pose:
 
 @dataclass
 class GestureEvent:
-    name: str  # jump, crouch, step, run_start, run_stop, punch, aim_start, aim_end
+    name: str  # jump, crouch, step, run_start, run_stop, punch, aim_start, aim_end, shoot,
+    # wheel_open, wheel_close, stand (back up after a crouch), fly_start, fly_end
     t_us: int
     confidence: float
 
@@ -60,6 +61,13 @@ class BodyState:
     aiming: bool = False
     sprinting: bool = False
     running: bool = False
+    crouching: bool = False  # between a crouch event and standing back up
+    wheel_open: bool = False  # weapon wheel held open (right hand over the shoulder)
+    wheel_x: float = 0.0  # where the left hand points while it's open, -1..1 (right +)
+    wheel_y: float = 0.0  # -1..1 (up +); both 0 while the arm rests
+    flying: bool = False  # arms spread like wings
+    fly_roll: float = 0.0  # -1 (left wing down) .. 1 (right wing down)
+    fly_pitch: float = 0.0  # -1 (hands up: nose up, stick back) .. 1 (hands down: nose down)
 
     def source(self, name: str) -> float:
         """Continuous sources referenced by profile bindings."""
@@ -70,6 +78,10 @@ class BodyState:
             "stroke_rhythm": self.run_stick,
             "step_back_or_lean_back": 0.0,
             "hand_height": 0.0,
+            "wheel_x": self.wheel_x,
+            "wheel_y": self.wheel_y,
+            "fly_roll": self.fly_roll,
+            "fly_pitch": self.fly_pitch,
         }.get(name, 0.0)
 
     def condition(self, name: str) -> bool:
@@ -77,6 +89,8 @@ class BodyState:
             "aiming": self.aiming,
             "cadence_above_sprint": self.sprinting,
             "stopped": not self.running,
+            "wheel_open": self.wheel_open,
+            "flying": self.flying,
         }.get(name, False)
 
 
@@ -91,6 +105,37 @@ def cadence_to_stick(cadence_hz: float, curve: list[float]) -> float:
     if cadence_hz <= 0:
         return 0.0
     return float(np.interp(cadence_hz, [0.0, curve[0], curve[1]], [0.0, 0.5, 1.0]))
+
+
+class OneEuro:
+    """One Euro filter (Casiez et al., CHI 2012) over an array of coordinates: a low-pass
+    whose cutoff opens with speed, so a still pose stops jittering while fast moves keep
+    their timing. Speeds are divided by `scale` (a torso length), so beta is per
+    torso length/s and doesn't depend on the camera distance or resolution."""
+
+    def __init__(self, min_cutoff_hz: float, beta: float, d_cutoff_hz: float):
+        self.min_cutoff_hz, self.beta, self.d_cutoff_hz = min_cutoff_hz, beta, d_cutoff_hz
+        self._x: np.ndarray | None = None
+        self._dx: np.ndarray | None = None
+        self._t_us = 0
+
+    @staticmethod
+    def _alpha(cutoff_hz, dt_s: float):
+        return 1.0 / (1.0 + 1.0 / (2 * math.pi * cutoff_hz * dt_s))
+
+    def reset(self) -> None:
+        self._x = None
+
+    def __call__(self, t_us: int, x: np.ndarray, scale: float) -> np.ndarray:
+        if self._x is None or t_us <= self._t_us:
+            self._x, self._dx, self._t_us = x.astype(float).copy(), np.zeros(x.shape), t_us
+            return x
+        dt = (t_us - self._t_us) / 1e6
+        self._dx = self._dx + self._alpha(self.d_cutoff_hz, dt) * ((x - self._x) / dt - self._dx)
+        cutoff = self.min_cutoff_hz + self.beta * np.abs(self._dx) / max(scale, 1e-6)
+        self._x = self._x + self._alpha(cutoff, dt) * (x - self._x)
+        self._t_us = t_us
+        return self._x.copy()
 
 
 @dataclass
@@ -128,6 +173,18 @@ class WebcamGestures:
         self._crouch_sent = False
         self._last_jump_us = -(10**12)
         self._aim_since_us: int | None = None
+        self._aim_lost_us: int | None = None
+        self._flick: tuple[int, float] | None = None  # (t_us, wrist height above shoulder)
+        self._last_shot_us = -(10**12)
+        self._wheel_since_us: int | None = None
+        self._wheel_lost_us: int | None = None
+        self._fly_since_us: int | None = None
+        self._fly_lost_us: int | None = None
+        wp = self.params.webcam
+        self._smooth = wp.smooth_min_cutoff_hz > 0
+        args = (wp.smooth_min_cutoff_hz, wp.smooth_beta, wp.smooth_d_cutoff_hz)
+        self._filter_img, self._filter_world = OneEuro(*args), OneEuro(*args)
+        self._torso_px: float | None = None
 
     # -- helpers -------------------------------------------------------------
 
@@ -138,18 +195,52 @@ class WebcamGestures:
     def _mid(a: np.ndarray, b: np.ndarray) -> np.ndarray:
         return (a + b) / 2
 
+    def _smoothed(self, pose: Pose) -> Pose:
+        """Landmark positions through the One Euro filters (visibility untouched)."""
+        xy = pose.img[:, :2]
+        torso = float(
+            np.linalg.norm(self._mid(xy[L_SHOULDER], xy[R_SHOULDER]) - self._mid(xy[L_HIP], xy[R_HIP]))
+        )
+        if torso > 1e-6:  # slow average: the filter's speed unit shouldn't jump with noise
+            self._torso_px = (
+                torso if self._torso_px is None else self._torso_px + 0.05 * (torso - self._torso_px)
+            )
+        if self._torso_px is None:
+            return pose
+        img = pose.img.copy()
+        img[:, :2] = self._filter_img(pose.t_us, xy, self._torso_px)
+        world = None
+        if pose.world is not None:
+            w = pose.world
+            torso_m = float(
+                np.linalg.norm(self._mid(w[L_SHOULDER], w[R_SHOULDER]) - self._mid(w[L_HIP], w[R_HIP]))
+            )
+            world = self._filter_world(pose.t_us, w, torso_m or 0.5)
+        return Pose(pose.t_us, img, world)
+
     # -- main entry ----------------------------------------------------------
 
     def update(self, pose: Pose | None) -> list[GestureEvent]:
         """Feed one frame (None = no person found). Returns events fired this frame."""
         events: list[GestureEvent] = []
+        if self._smooth:
+            if pose is None:
+                self._filter_img.reset()
+                self._filter_world.reset()
+            else:
+                pose = self._smoothed(pose)
         if pose is None or not self._visible(pose, L_SHOULDER, R_SHOULDER, L_HIP, R_HIP):
             self.state.visible = False
             self._check_stop(pose.t_us if pose else None, events)
+            t = pose.t_us if pose else 0
             if self.state.aiming:
                 self.state.aiming = False
-                events.append(GestureEvent("aim_end", pose.t_us if pose else 0, 1.0))
-            self._aim_since_us = None
+                events.append(GestureEvent("aim_end", t, 1.0))
+            if self.state.wheel_open:
+                self._close_wheel(t, events)
+            if self.state.flying:
+                self._land(t, events)
+            self._aim_since_us = self._aim_lost_us = self._flick = self._wheel_since_us = None
             return events
         self.state.visible = True
         xy = pose.img[:, :2]
@@ -162,8 +253,11 @@ class WebcamGestures:
         self._run(pose, hip, torso, conf, events)
         self._jump(pose, hip, torso, conf, events)
         self._lean(pose)
+        self._wheel(pose, torso, events)
+        self._fly(pose, torso, events)
         self._punch(pose, torso, events)
         self._aim(pose, torso, events)
+        self._shoot(pose, torso, events)
         return events
 
     # -- run -----------------------------------------------------------------
@@ -265,11 +359,15 @@ class WebcamGestures:
             elif dip_ms >= p.jump.crouch_hold_ms and not self._crouch_sent:
                 events.append(GestureEvent("crouch", t, conf))
                 self._crouch_sent = True
+                self.state.crouching = True
         elif rel < -1.5 * p.webcam.jump_dip and vel < -p.webcam.jump_rise_speed:
             # Jumped without a visible dip: fire late rather than never.
             if since_jump_ms > p.webcam.jump_refractory_ms:
                 events.append(GestureEvent("jump", t, conf * 0.8))
                 self._last_jump_us = t
+        if self.state.crouching and rel < p.webcam.jump_dip / 2:  # hips back up: stood up
+            self.state.crouching = False
+            events.append(GestureEvent("stand", t, conf))
         if abs(rel) < p.webcam.jump_dip / 2 and abs(vel) < p.webcam.jump_rise_speed / 2:
             self._hip_base += 0.02 * (h - self._hip_base)
 
@@ -301,6 +399,8 @@ class WebcamGestures:
 
     def _punch(self, pose: Pose, torso_px: float, events: list[GestureEvent]) -> None:
         wp = self.params.webcam
+        # Reaching for the wheel, pointing and spreading wings aren't punches.
+        quiet = self.state.wheel_open or self._wheel_since_us is not None or self._fly_since_us is not None
         for arm in self._arms:
             if not self._visible(pose, arm.shoulder, arm.elbow, arm.wrist):
                 arm.last_reach = None
@@ -314,7 +414,8 @@ class WebcamGestures:
                 speed = (reach - arm.last_reach) / ((pose.t_us - arm.last_t_us) / 1e6)
                 arm.last_speed = speed
                 if (
-                    speed > wp.punch_speed
+                    not quiet
+                    and speed > wp.punch_speed
                     and elbow_deg > wp.punch_elbow_deg
                     and (pose.t_us - arm.last_punch_us) / 1000 > wp.punch_refractory_ms
                 ):
@@ -345,7 +446,9 @@ class WebcamGestures:
         # timer restarts after every punch.
         moving = abs(arm.last_speed) > wp.punch_speed / 4
         recent_punch = (t - arm.last_punch_us) / 1000 < wp.punch_refractory_ms
-        if aim_pose and (moving or recent_punch):
+        if aim_pose:
+            self._aim_lost_us = None
+        if aim_pose and (moving or recent_punch) and not self.state.aiming:
             self._aim_since_us = None
         elif aim_pose:
             if self._aim_since_us is None:
@@ -356,5 +459,120 @@ class WebcamGestures:
         else:
             self._aim_since_us = None
             if self.state.aiming:
-                self.state.aiming = False
-                events.append(GestureEvent("aim_end", t, 1.0))
+                # Keep aiming through a short excursion (a recoil flick leaves the pose).
+                self._aim_lost_us = self._aim_lost_us or t
+                if (t - self._aim_lost_us) / 1000 >= wp.aim_release_ms:
+                    self.state.aiming = False
+                    self._aim_lost_us = None
+                    events.append(GestureEvent("aim_end", t, 1.0))
+
+    # -- shoot -----------------------------------------------------------------
+
+    def _shoot(self, pose: Pose, torso_px: float, events: list[GestureEvent]) -> None:
+        """Recoil flick: while aiming, the right wrist jumps up relative to the shoulder.
+        Costly action (rule 7): gated on aiming here and in the binding, and on the arm
+        keypoints' confidence."""
+        wp = self.params.webcam
+        arm = self._arms[1]
+        if not self.state.aiming or not self._visible(pose, arm.shoulder, arm.wrist):
+            self._flick = None
+            return
+        (s, _e, w), _ = self._arm_points(pose, arm, torso_px)
+        up = float(s[1] - w[1])  # y grows downward in image and world coordinates
+        t = pose.t_us
+        if self._flick is not None and t > self._flick[0]:
+            speed = (up - self._flick[1]) / ((t - self._flick[0]) / 1e6)
+            conf = float(pose.img[[arm.shoulder, arm.elbow, arm.wrist], 2].min())
+            if (
+                speed > wp.shoot_flick_speed
+                and conf >= wp.shoot_min_conf
+                and (t - self._last_shot_us) / 1000 > wp.shoot_refractory_ms
+            ):
+                events.append(GestureEvent("shoot", t, conf))
+                self._last_shot_us = t
+        self._flick = (t, up)
+
+    # -- weapon wheel ------------------------------------------------------------
+
+    def _wheel(self, pose: Pose, torso_px: float, events: list[GestureEvent]) -> None:
+        """Right hand reaches over the right shoulder (to a backpack) and stays: the wheel
+        opens; the left hand's direction picks the slot; dropping the right hand closes it
+        (GTA equips the highlighted weapon)."""
+        wp = self.params.webcam
+        xy = pose.img[:, :2] / torso_px
+        t = pose.t_us
+        reach = False
+        if self._visible(pose, R_SHOULDER, R_WRIST):
+            above = xy[R_SHOULDER, 1] - xy[R_WRIST, 1]
+            reach = above > wp.wheel_reach and abs(xy[R_WRIST, 0] - xy[R_SHOULDER, 0]) < wp.wheel_side
+        if reach:
+            self._wheel_lost_us = None
+            self._wheel_since_us = self._wheel_since_us or t
+            if not self.state.wheel_open and (t - self._wheel_since_us) / 1000 >= wp.wheel_hold_ms:
+                self.state.wheel_open = True
+                events.append(GestureEvent("wheel_open", t, 1.0))
+        else:
+            self._wheel_since_us = None
+            if self.state.wheel_open:
+                self._wheel_lost_us = self._wheel_lost_us or t
+                if (t - self._wheel_lost_us) / 1000 >= wp.wheel_release_ms:
+                    self._close_wheel(t, events)
+        x = y = 0.0
+        if self.state.wheel_open and self._visible(pose, L_SHOULDER, L_WRIST):
+            d = xy[L_WRIST] - xy[L_SHOULDER]
+            length = float(np.linalg.norm(d))
+            # Angle from straight down; a hanging arm is resting, not pointing.
+            from_down = math.degrees(math.acos(max(-1.0, min(1.0, d[1] / max(length, 1e-9)))))
+            if length > wp.wheel_point_min and from_down > wp.wheel_rest_deg:
+                # The camera faces you: your right is image left, so x flips; image y is down.
+                x, y = -d[0] / length, -d[1] / length
+        self.state.wheel_x, self.state.wheel_y = x, y
+
+    # -- flight ----------------------------------------------------------------
+
+    def _fly(self, pose: Pose, torso_px: float, events: list[GestureEvent]) -> None:
+        """Arms spread like wings: flying. The wing line's tilt rolls (your left hand
+        lower = roll left); both hands above the shoulders pull the nose up, below push
+        it down."""
+        wp = self.params.webcam
+        t = pose.t_us
+        spread = False
+        if self._visible(pose, L_WRIST, R_WRIST, L_SHOULDER, R_SHOULDER):
+            xy = pose.img[:, :2] / torso_px
+            span = float(np.linalg.norm(xy[L_WRIST] - xy[R_WRIST]))
+            spread = span > wp.fly_span
+        if spread:
+            self._fly_lost_us = None
+            self._fly_since_us = self._fly_since_us or t
+            if not self.state.flying and (t - self._fly_since_us) / 1000 >= wp.fly_hold_ms:
+                self.state.flying = True
+                events.append(GestureEvent("fly_start", t, 1.0))
+        else:
+            self._fly_since_us = None
+            if self.state.flying:
+                self._fly_lost_us = self._fly_lost_us or t
+                if (t - self._fly_lost_us) / 1000 >= wp.fly_release_ms:
+                    self._land(t, events)
+        roll = pitch = 0.0
+        if self.state.flying and spread:
+            # Camera faces you: your left hand is on the image right, so the line runs
+            # right hand -> left hand along +x; your left hand lower (larger y) = roll left.
+            d = xy[L_WRIST] - xy[R_WRIST]
+            tilt = math.degrees(math.atan2(d[1], abs(d[0])))
+            roll = -deadzone_map(tilt, wp.fly_roll_deadzone_deg, wp.fly_roll_full_deg)
+            hands_up = float(
+                self._mid(xy[L_SHOULDER], xy[R_SHOULDER])[1] - self._mid(xy[L_WRIST], xy[R_WRIST])[1]
+            )
+            pitch = -deadzone_map(hands_up, wp.fly_pitch_deadzone, wp.fly_pitch_full)
+        self.state.fly_roll, self.state.fly_pitch = roll, pitch
+
+    def _land(self, t_us: int, events: list[GestureEvent]) -> None:
+        self.state.flying = False
+        self.state.fly_roll = self.state.fly_pitch = 0.0
+        self._fly_lost_us = None
+        events.append(GestureEvent("fly_end", t_us, 1.0))
+
+    def _close_wheel(self, t_us: int, events: list[GestureEvent]) -> None:
+        self.state.wheel_open = False
+        self._wheel_lost_us = None
+        events.append(GestureEvent("wheel_close", t_us, 1.0))

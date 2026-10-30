@@ -104,7 +104,47 @@ class WebcamParams(_Strict):
     aim_forward: float = Field(0.4, gt=0, description="Right wrist this far in front of the shoulder")
     aim_height: float = Field(0.35, gt=0, description="Right wrist within this of shoulder height")
     aim_hold_ms: int = Field(120, ge=0, description="Pose held this long before aiming starts")
+    aim_release_ms: int = Field(
+        200, ge=0, description="Aiming survives leaving the pose this long (e.g. a recoil flick)"
+    )
+    shoot_flick_speed: float = Field(
+        1.5, gt=0, description="While aiming: upward wrist speed vs the shoulder (torso/s) that shoots"
+    )
+    shoot_refractory_ms: int = Field(300, ge=0, description="Ignore new shots this long after one")
+    shoot_min_conf: float = Field(
+        0.5, ge=0, le=1, description="Costly action (rule 7): lowest arm keypoint confidence that may shoot"
+    )
+    wheel_reach: float = Field(
+        0.25, gt=0, description="Weapon wheel: right wrist this far above the right shoulder opens it"
+    )
+    wheel_side: float = Field(0.6, gt=0, description="... and within this distance of it sideways")
+    wheel_hold_ms: int = Field(150, ge=0, description="Reach held this long before the wheel opens")
+    wheel_release_ms: int = Field(150, ge=0, description="Hand away this long before the wheel closes")
+    wheel_point_min: float = Field(
+        0.45, gt=0, description="Left wrist this far from the left shoulder points at a slot"
+    )
+    wheel_rest_deg: float = Field(
+        30, ge=0, le=90, description="Left arm within this of straight down is resting, not pointing"
+    )
+    fly_span: float = Field(
+        2.0, gt=0, description="Flight: wrist-to-wrist distance (torso lengths) that counts as wings spread"
+    )
+    fly_hold_ms: int = Field(300, ge=0, description="Wings held this long before flying starts")
+    fly_release_ms: int = Field(300, ge=0, description="Wings folded this long before flying stops")
+    fly_roll_deadzone_deg: float = Field(8, ge=0, description="Wing-line tilt below this = no roll")
+    fly_roll_full_deg: float = Field(35, gt=0, description="Wing-line tilt for full roll")
+    fly_pitch_deadzone: float = Field(
+        0.1, ge=0, description="Hands above/below the shoulders (torso lengths) below this = no pitch"
+    )
+    fly_pitch_full: float = Field(0.6, gt=0, description="Hand height for full pitch")
     min_visibility: float = Field(0.5, ge=0, le=1, description="Ignore landmarks MediaPipe isn't sure of")
+    smooth_min_cutoff_hz: float = Field(
+        0.0, ge=0, description="One Euro landmark filter: cutoff when still (Hz); 0 = no smoothing"
+    )
+    smooth_beta: float = Field(
+        0.3, ge=0, description="One Euro: how fast the cutoff opens with speed (per torso length/s)"
+    )
+    smooth_d_cutoff_hz: float = Field(1.0, gt=0, description="One Euro: cutoff of the speed estimate (Hz)")
 
 
 class Gestures(_Strict):
@@ -249,6 +289,56 @@ class Binding(_Strict):
 
 NEUTRAL = Binding()
 
+
+# --- Tier 0 extras ------------------------------------------------------------
+
+
+class WeaponWheel(_Strict):
+    hold: str = Field("l1", description="Held while the wheel is open (GTA: L1 / LB)")
+    select: Literal["left_stick", "right_stick"] = Field(
+        "right_stick", description="Stick that points at the slot (GTA: right stick)"
+    )
+    modes: list[str] = Field(default_factory=lambda: ["on_foot"], description="Game modes it works in")
+
+    @field_validator("hold")
+    @classmethod
+    def _button(cls, v: str) -> str:
+        if v not in BUTTON_OUTPUTS:
+            raise ValueError(f"weapon wheel must hold a button, one of {sorted(BUTTON_OUTPUTS)}")
+        return v
+
+
+class Cover(_Strict):
+    tap: str = Field("r1", description="Tapped when you crouch and again when you stand (GTA: R1 / RB)")
+    modes: list[str] = Field(default_factory=lambda: ["on_foot"], description="Game modes it works in")
+
+    @field_validator("tap")
+    @classmethod
+    def _button(cls, v: str) -> str:
+        if v not in BUTTON_OUTPUTS:
+            raise ValueError(f"cover must tap a button, one of {sorted(BUTTON_OUTPUTS)}")
+        return v
+
+
+class Flight(_Strict):
+    """Arms spread like wings fly the aircraft: the one exception to rule 4's neutral
+    body sticks in vehicles, approved for the Tier 0 virtual pad only."""
+
+    stick: Literal["left_stick", "right_stick"] = Field(
+        "left_stick", description="Stick the wings drive (GTA aircraft: left stick rolls and pitches)"
+    )
+    modes: list[str] = Field(default_factory=lambda: ["plane", "heli"], description="Game modes it works in")
+
+
+class Tier0Extras(_Strict):
+    """Controls only the Tier 0 virtual pad drives: with every Access controller port
+    taken, Tier 2+ leaves these to the DualSense. Not compiled into device profiles."""
+
+    weapon_wheel: WeaponWheel | None = None
+    cover: Cover | None = None
+    flight: Flight | None = None
+
+
 ALLOWED_KINDS = {
     PortType.STICK: {"axes", "neutral"},
     PortType.BUTTON: {"event", "pulse", "hold", "neutral"},
@@ -284,6 +374,7 @@ class Profile(_Strict):
     gestures: Gestures = Gestures()
     ports: dict[PortName, Port]
     modes: dict[str, ModeProfile]
+    tier0: Tier0Extras = Tier0Extras()
 
     @model_validator(mode="after")
     def _check(self) -> Profile:

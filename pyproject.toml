@@ -25,9 +25,22 @@ video = [
 webcam = ["mediapipe>=0.10"]
 # Tier 0 virtual Xbox 360 pad (ViGEmBus); Windows only
 gamepad = ["vgamepad==0.1.0; sys_platform == 'win32'"]
+# Tier 0 RTMPose pose model on an NVIDIA GPU (`--pose rtmpose`); CUDA and cuDNN come as wheels
+rtmpose = [
+    "rtmlib>=0.0.16",
+    "onnxruntime-gpu[cuda,cudnn]>=1.22; sys_platform != 'darwin'",
+]
 
 [tool.uv]
-default-groups = ["dev", "video", "webcam", "gamepad"]
+default-groups = ["dev", "video", "webcam", "gamepad", "rtmpose"]
+# rtmlib requires the CPU onnxruntime, which shares its import name with onnxruntime-gpu
+# and would shadow it: keep the CPU build only on macOS (no CUDA there).
+override-dependencies = ["onnxruntime; sys_platform == 'darwin'"]
+# The lock must install on both machines: some nvidia-* CUDA wheels are Linux-only.
+required-environments = [
+    "sys_platform == 'win32' and platform_machine == 'AMD64'",
+    "sys_platform == 'darwin' and platform_machine == 'arm64'",
+]
 
 # vgamepad ships only an sdist whose setup.py refuses to run on macOS, which
 # breaks locking there. Give uv its metadata so it never builds it off Windows.

@@ -78,6 +78,7 @@ METER_PARTS = {
     "FEET": (W.L_ANKLE, W.R_ANKLE),
 }
 REQUIRED = ("HEAD", "SHLD", "HIPS", "KNEE")
+SIGNAL_COLS, SIGNAL_ROWS = 10, 6  # SIGNAL grid: one cell per frame, the last 60 (2 s at 30 fps)
 
 
 @dataclass
@@ -393,6 +394,19 @@ def _bar(c: T.Canvas, x: int, y: int, w: int, label: str, v: float, signed: bool
     return bottom + 6
 
 
+def _status(st) -> str:
+    """The one body state worth showing next to TRACKED."""
+    if getattr(st, "flying", False):
+        return "FLYING"
+    if getattr(st, "wheel_open", False):
+        return "WHEEL OPEN"
+    if st.aiming:
+        return "AIMING"
+    if getattr(st, "crouching", False):
+        return "IN COVER"
+    return "idle"
+
+
 def _panel(c: T.Canvas, p: Panel) -> None:
     x0, y0, x1, _ = PANEL
     x, y, w = x0 + 22, y0 + 14, x1 - x0 - 44
@@ -410,9 +424,7 @@ def _panel(c: T.Canvas, p: Panel) -> None:
         tracked = "TRACKED" if st.visible else "NOT FOUND"
         d.text((x, y), tracked, font=f, fill=T.MINT if st.visible else T.PINK)
         ax = x + T.text_width(tracked, "body", 19) + 14
-        d.text(
-            (ax, y), "AIMING" if st.aiming else "not aiming", font=f, fill=T.MINT if st.aiming else T.LAVENDER
-        )
+        d.text((ax, y), _status(st), font=f, fill=T.LAVENDER if _status(st) == "idle" else T.MINT)
         d.text((x + w, y), f"{st.cadence_hz:.1f} steps/s" + ("  SPRINT" if st.sprinting else ""),
                font=f, fill=T.CREAM, anchor="ra")  # fmt: skip
         y += 30
@@ -456,7 +468,7 @@ def _meters(c: T.Canvas, hud: Hud) -> None:
             anchor="ma",
         )
     x0, y0, x1, y1 = SIGNAL
-    cols, rows = 10, 6
+    cols, rows = SIGNAL_COLS, SIGNAL_ROWS
     gx0, gy0 = x0 + 34, y0 + 9
     cell = min((x1 - 8 - gx0) / cols, (y1 - 9 - gy0) / rows)
     q = list(hud.quality)[-cols * rows :]

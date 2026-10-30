@@ -80,14 +80,16 @@ def run_webcam(
     fps: int = 60,
     model: str = "lite",
     show: bool = True,
+    pose: str = "auto",
 ) -> int:
-    from bodyctl.sensors.webcam_pose import Camera, PoseEstimator, ensure_model
+    from bodyctl.sensors.webcam_pose import Camera, open_pose
     from bodyctl.tools.dashboard import Dashboard
 
     with ExitStack() as cleanup:
         cleanup.callback(gamepad.close)
-        estimator = PoseEstimator(ensure_model(model))
+        estimator, label = open_pose(pose, model)
         cleanup.callback(estimator.close)
+        print(f"pose model {label}")
         cam = Camera(camera_index, size[0], size[1], fps)
         cleanup.callback(cam.close)
         print(f"camera {camera_index}: {cam.size[0]}x{cam.size[1]} @ {cam.fps:.0f} fps; Ctrl+C or q to quit")

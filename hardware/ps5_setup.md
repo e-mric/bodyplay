@@ -37,7 +37,7 @@ uv run bodyctl hil --port <hub port>
 Confirm each port on a screen that shows the inputs live. Record in `CLAUDE.md`:
 
 - **Stick axis order** on Tip vs Ring 1 (open question).
-- **Stick merging:** move the Access controller stick (`bodyctl hil`, A-E1 up) and the DualSense left stick at the same time. Does the PS5 add them, pick one, or jitter? This decides how vehicle modes behave. Body sticks are already held at neutral in vehicles.
+- **Stick merging:** move the Access controller stick (`bodyctl hil`, A-E1 up) and the DualSense left stick at the same time. Does the PS5 add them, pick one, or jitter? This decides how vehicle modes behave. Body sticks are already held at neutral in vehicles (rule 4; only Tier 0 flight, on the virtual pad, is exempt).
 
 ## 5. Game
 

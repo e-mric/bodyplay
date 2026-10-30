@@ -53,8 +53,9 @@ follow [the Tier 0 walkthrough](tier0_windows.md). That test does not use chiaki
 ## Automated checks
 
 CI runs Python tests and firmware builds on macOS and Windows. It uses
-`uv sync --locked --no-group gamepad` and `uv run --no-group gamepad ...` to
-exclude the Windows driver installer. Gameplay output is tested through the
+`uv sync --locked --no-group gamepad --no-group rtmpose` (and the same flags on
+`uv run`) to exclude the Windows driver installer and the GPU pose model with its
+CUDA wheels; the RTMPose code is tested with stand-in models. Gameplay output is tested through the
 dry-run backend; ViGEmBus and chiaki-ng still need the play-PC check above.
 PlatformIO is installed in the Python jobs too, so recorder and replay tests
 exercise the native firmware simulator.

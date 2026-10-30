@@ -93,5 +93,16 @@ modes:
 
   paused: {}                 # cutscenes, menus, phone: everything released
 
+# Tier 0 only (virtual pad): no Access controller port is left for these, so from
+# Tier 2 on the DualSense keeps them. Reach over your right shoulder to open the
+# weapon wheel (LB / L1), point with your left hand, drop the right hand to equip.
+# Crouch down to take cover (R1 / RB, a toggle), stand up to leave it.
+# In a plane or helicopter (mode heli), spread your arms like wings to fly: tilt them
+# to roll, raise both hands for nose up, lower them for nose down (rule 4 exception).
+tier0:
+  weapon_wheel: {hold: l1, select: right_stick}
+  cover: {tap: r1}
+  flight: {stick: left_stick}
+
 # Left to the DualSense: R1 cover / handbrake, L3 stealth / horn, L1 weapon wheel,
 # D-pad phone, R3 look behind, aircraft yaw and landing gear, menus.

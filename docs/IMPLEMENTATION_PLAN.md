@@ -146,8 +146,10 @@ Every video chapter shows a latency number, so this comes before anything else i
     - Done in code: `bodyctl.mapping.BindingEngine`, `bodyctl.output.gamepad` (press scheduler for hard rule 8, `vgamepad` and `dry-run` backends), `bodyctl webcam`. To do: run on the Windows PC with chiaki-ng.
 - [x] Dashboard: skeleton overlay, live events, cadence, confidence bars (built into `bodyctl webcam`; corner flash doubles as the fallback output marker; keys: m mode, p pause, r reset stats).
 - [ ] Measure with M1: 20 trials each for jump and run start.
-- [ ] Tune Tier 0 thresholds on real drills: `bodyctl webcam-drill` (cued reps per move, camera-placement guide, several angles) and `bodyctl webcam-tune` (grid search per gesture group, hits − 2 × false; writes a local tuned profile).
+- [ ] Tune Tier 0 thresholds on real drills: `bodyctl webcam-drill` (cued reps per move, camera-placement guide, several angles) and `bodyctl webcam-tune` (grid search per gesture group, two passes, maximising the mean F1 over moves; writes a local tuned profile).
     - Done in code and tested on synthetic poses (`pc/tests/test_drill.py`). To do: record every move at front, right30 and left30 on the Windows PC; move values that hold across angles into `gta5.yaml`.
+- [x] Pose model choice: MediaPipe lite/full/heavy, RTMPose-m/x and ViTPose-b/l compared on one recorded drill (left30, 36 cues). RTMPose-m won: 30/36 cues vs 20/36 for MediaPipe, knees tracked in 98 % of frames, ~4.5 ms on an RTX 5080. Added as `--pose rtmpose` (default when CUDA is available), with One Euro landmark smoothing tuned by `webcam-tune`.
+- [ ] Tier 0 extras, done in code and tested on synthetic poses (`pc/tests/test_shoot_wheel_cover.py`), not yet tried in GTA: walk / jog / sprint drill with a tuned `cadence_curve`; shoot by recoil flick while aiming (aim survives the flick); weapon wheel (right hand over the shoulder holds L1, left hand points the right stick); crouch / stand taps R1 for cover; flight in plane / heli mode (arms spread: tilt rolls, hand height pitches; rule 4 exception approved 2026-10-29). Wheel, cover and flight live in the profile's `tier0` section: Tier 2 has no free port, so the DualSense keeps them there (and flies).
 
 **Acceptance:** 20-minute GTA V session on foot using only the webcam; latency CSV saved for the video.
 

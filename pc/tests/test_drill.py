@@ -104,7 +104,8 @@ def test_search_lowers_knee_lift_for_small_steps():
     g = gestures()
     assert wt.score(rec, g).events["run_start"].hits == 0
     best, results = wt.search([rec], g, progress=lambda s: None)
-    assert [r.group for r in results] == ["run"]  # only cued moves are tuned
+    groups = [r.group for r in results]
+    assert groups == ["smooth", "run", "smooth (pass 2)", "run (pass 2)"]  # smoothing, then cued moves only
     assert best.webcam.knee_lift < 0.09
     sc = wt.score(rec, best)
     assert sc.events["run_start"].hits == 1 and sc.events["run_stop"].hits == 1
@@ -128,6 +129,8 @@ def test_lean_stats_and_suggestion():
     sug = wt.suggest_lean(st, g.lean)
     assert sug["lean.deadzone_deg"] == 1.0
     assert sug["lean.full_deg"] == 12.0
+    noisy = wt.LeanStats(hold_deg=4.0, neutral_deg=40.0, hold_ok=0.1, neutral_ok=0.3)
+    assert wt.suggest_lean(noisy, g.lean) == {}  # sway this large is noise: leave lean alone
 
 
 def test_measure_view_and_checks():
@@ -169,10 +172,10 @@ def test_set_params_and_write_profile(tmp_path):
 
 def test_cli_tune(tmp_path, capsys):
     path = small_steps_recording().save(tmp_path / "drill.npz")
-    assert main(["webcam-tune", str(path), "--profile", GTA5, "--score-only"]) == 0
+    assert main(["webcam-tune", str(path), "--profile", GTA5, "--pose", "mediapipe", "--score-only"]) == 0
     assert "run_start" in capsys.readouterr().out
     out = tmp_path / "tuned.yaml"
-    assert main(["webcam-tune", str(path), "--profile", GTA5, "-o", str(out)]) == 0
+    assert main(["webcam-tune", str(path), "--profile", GTA5, "--pose", "mediapipe", "-o", str(out)]) == 0
     assert load_profile(out).gestures.webcam.knee_lift < 0.09
     assert "front" in capsys.readouterr().out
 
@@ -226,3 +229,35 @@ def test_view_from_knees_when_feet_hidden():
     assert v.roll_deg == pytest.approx(0, abs=1)
     lines, ready = view_checks(View(yaw_deg=0, roll_deg=0, height_frac=0.6, from_knees=True), ["feet"], 0.0)
     assert ready and "estimated from your knees" in lines[1][0]
+
+
+def test_walk_jog_sprint_speeds_and_cadence_suggestion():
+    s = build_script(["walk"], 2)
+    labels = [st.label for st in s]
+    assert labels.count("walk") == 2 and labels.count("jog") == 2 and labels.count("sprint") == 2
+    assert all(st.is_action for st in s if st.label in ("walk", "jog", "sprint"))
+
+    tl = Timeline(22.0)
+    tl.run(2.0, 7.0, cadence_hz=1.4)
+    tl.run(7.0, 12.0, cadence_hz=2.2)
+    tl.run(12.0, 16.0, cadence_hz=3.8)
+    rec = recording(
+        tl,
+        [("still", 0, 2.0), ("walk", 2.0, 7.0), ("jog", 7.0, 12.0), ("sprint", 12.0, 16.0),
+         ("stop", 16.0, 22.0)],
+    )  # fmt: skip
+    g = gestures()
+    sc = wt.score(rec, g)
+    assert sc.events["run_start"].hits == 1 and sc.events["run_stop"].hits == 1
+    sp = sc.speed
+    assert sp is not None
+    assert sp.cadence_hz["walk"] == pytest.approx(1.4, abs=0.15)
+    assert sp.cadence_hz["jog"] == pytest.approx(2.2, abs=0.15)
+    assert sp.cadence_hz["sprint"] == pytest.approx(3.8, abs=0.3)
+    assert sp.on_target["sprint"] > 0.8  # 3.8 steps/s is above the default sprint point (3.5)
+    curve = wt.suggest_cadence(sp, g.cadence_curve)
+    assert curve is not None and curve[0] < curve[1] < curve[2]
+    assert curve[0] == pytest.approx(1.4, abs=0.15) and curve[1] == pytest.approx(2.2, abs=0.15)
+    tuned = g.model_copy(update={"cadence_curve": curve})
+    assert wt.score(rec, tuned).speed.on_target["jog"] > sp.on_target["jog"]  # jog now reaches full stick
+    assert "speed: walk" in wt.format_scores(sc)

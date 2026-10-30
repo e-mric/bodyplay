@@ -25,6 +25,13 @@ from bodyctl.gestures.webcam import NUM_LANDMARKS, Pose
 # Cue label -> (event it expects, seconds after the cue it may arrive). Detections may
 # also come up to EARLY_S before the cue: the countdown lets you anticipate.
 EXPECT: dict[str, tuple[str, float]] = {
+    "walk": ("run_start", 2.0),
+    "stand_up": ("stand", 1.5),
+    "shoot": ("shoot", 1.0),
+    "wheel_open": ("wheel_open", 1.5),
+    "wheel_close": ("wheel_close", 1.5),
+    "wings": ("fly_start", 1.5),
+    "land": ("fly_end", 1.5),
     "run": ("run_start", 2.0),
     "stop": ("run_stop", 3.0),
     "jump": ("jump", 1.5),
@@ -35,8 +42,27 @@ EXPECT: dict[str, tuple[str, float]] = {
     "aim_down": ("aim_end", 1.5),
 }
 LEAN = {"lean_left": -1, "lean_right": 1}  # sign of lean_deg expected while held
+# Running speeds held for a few seconds each: walk = half stick, jog = full stick,
+# sprint = full stick plus sprint taps (profile cadence_curve).
+SPEEDS = ("walk", "jog", "sprint")
+# Weapon wheel: where the left hand should point, as the stick angle (deg, 0 = your
+# right, 90 = up). Straight down is the resting arm, so it isn't cued.
+POINTS = {
+    "point_up": 90, "point_up_right": 45, "point_right": 0, "point_down_right": -45,
+    "point_down_left": -135, "point_left": 180, "point_up_left": 135,
+}  # fmt: skip
+# Flight: which stick axis each cue should move, and which way (pitch -1 = nose up).
+FLY = {
+    "roll_left": ("roll", -1), "roll_right": ("roll", 1), "nose_up": ("pitch", -1), "nose_down": ("pitch", 1),
+}  # fmt: skip
+FLY_TEXT = {
+    "roll_left": "ROLL LEFT: your left hand down",
+    "roll_right": "ROLL RIGHT: your right hand down",
+    "nose_up": "NOSE UP: raise both hands",
+    "nose_down": "NOSE DOWN: lower both hands",
+}
 EARLY_S = 0.3
-MOVES = ("run", "jump", "crouch", "lean", "punch", "aim")
+MOVES = ("run", "walk", "jump", "crouch", "lean", "punch", "aim", "shoot", "wheel", "fly")
 
 # Where the camera sits relative to you while you face the screen: yaw in degrees,
 # + = camera off to your right. Record drills at several so gestures work from any of them.
@@ -67,7 +93,7 @@ class Step:
 
     @property
     def is_action(self) -> bool:
-        return self.label in EXPECT or self.label in LEAN
+        return any(self.label in group for group in (EXPECT, LEAN, SPEEDS, POINTS, FLY))
 
 
 @dataclass
@@ -82,10 +108,17 @@ def _reps(move: str, reps: int) -> list[Step]:
     for i in range(reps):
         if move == "run":
             s += [Step("run", "RUN in place!", 5.0), Step("stop", "STOP - stand still", 4.0)]
+        elif move == "walk":
+            s += [
+                Step("walk", "WALK slowly in place", 5.0),
+                Step("jog", "JOG in place", 5.0),
+                Step("sprint", "SPRINT! fast steps", 4.0),
+                Step("stop", "STOP - stand still", 4.0),
+            ]
         elif move == "jump":
             s += [Step("jump", "JUMP!", 1.5), Step("gap", "stand still", 2.0)]
         elif move == "crouch":
-            s += [Step("crouch", "CROUCH and hold", 2.0), Step("gap", "stand up slowly", 2.5)]
+            s += [Step("crouch", "CROUCH and hold", 2.0), Step("stand_up", "STAND UP", 2.5)]
         elif move == "lean":
             side = "left" if i % 2 == 0 else "right"
             s += [
@@ -98,6 +131,28 @@ def _reps(move: str, reps: int) -> list[Step]:
                 Step(f"punch_{side}", f"PUNCH with your {side.upper()} arm!", 1.2),
                 Step("gap", "guard up, hold still", 2.0),
             ]
+        elif move == "shoot":
+            s += [
+                Step("aim", "AIM and hold", 2.0),
+                Step("shoot", "SHOOT! flick your hand up", 1.2),
+                Step("shoot", "SHOOT again!", 1.2),
+                Step("aim_down", "arm DOWN", 2.5),
+            ]
+        elif move == "wheel":
+            label = list(POINTS)[i % len(POINTS)]
+            where = label.removeprefix("point_").replace("_", "-").upper()
+            s += [
+                Step("wheel_open", "WHEEL: right hand over your shoulder", 1.5),
+                Step(label, f"point your LEFT hand {where}", 2.5),
+                Step("wheel_close", "drop your right hand to equip", 2.0),
+            ]
+        elif move == "fly":
+            label = list(FLY)[i % len(FLY)]
+            s += [
+                Step("wings", "WINGS: spread your arms wide", 2.0),
+                Step(label, FLY_TEXT[label], 2.5),
+                Step("land", "LAND: arms down", 2.5),
+            ]
         elif move == "aim":
             s += [Step("aim", "AIM and hold", 2.5), Step("aim_down", "arm DOWN", 2.5)]
         else:
@@ -107,11 +162,15 @@ def _reps(move: str, reps: int) -> list[Step]:
 
 HOW = {
     "run": "RUN in place: lift your knees, alternate legs",
+    "walk": "WALK in place, then JOG, then SPRINT: knees up, speed up each time",
     "jump": "JUMP: small knee bend, push up fast",
     "crouch": "CROUCH: bend your knees and hold",
     "lean": "LEAN: tilt your shoulders sideways, feet planted",
     "punch": "PUNCH: fast and straight ahead, at the screen",
     "aim": "AIM: RIGHT arm straight ahead, at the screen",
+    "shoot": "SHOOT: aim with your RIGHT arm, then flick the hand up like recoil",
+    "wheel": "WHEEL: right hand over your right shoulder, LEFT hand points at a slot",
+    "fly": "FLY: spread your arms like wings, tilt them to roll, raise or lower them to pitch",
 }
 
 
@@ -394,12 +453,13 @@ def run_drill(
     video: bool = False,
     sound: bool = True,
     angle: str = "front",
+    pose: str = "auto",
 ) -> Path | None:
     import cv2
 
     from bodyctl.config.profile import load_profile
     from bodyctl.gestures.webcam import WebcamGestures
-    from bodyctl.sensors.webcam_pose import Camera, PoseEstimator, ensure_model
+    from bodyctl.sensors.webcam_pose import Camera, open_pose
     from bodyctl.tools import drill_view as V
     from bodyctl.tools.webcam_tune import format_scores, match_cues, score
 
@@ -407,7 +467,7 @@ def run_drill(
     script = build_script(moves, reps)
     target_yaw = ANGLES[angle]
     path = drill_path(out_dir, moves, angle)
-    estimator = PoseEstimator(ensure_model(model))
+    estimator, pose_name = open_pose(pose, model)
     cam = Camera(camera_index, size[0], size[1], fps)
     rec = RecordingBuilder(
         {
@@ -418,6 +478,7 @@ def run_drill(
             "target_yaw_deg": target_yaw,
             "camera": {"index": camera_index, "size": list(cam.size), "fps": cam.fps},
             "model": model,
+            "pose": pose_name,
             "profile": Path(profile_path).as_posix(),
             "created": datetime.now().isoformat(timespec="seconds"),
             "complete": False,
@@ -433,10 +494,10 @@ def run_drill(
     V.open_window(window)
     show_skeleton = True
     hud = V.Hud(size=cam.size)
-    quality: deque[float] = deque(maxlen=50)
+    quality: deque[float] = deque(maxlen=V.SIGNAL_COLS * V.SIGNAL_ROWS)
     last_t: int | None = None
     total_s = sum(s.seconds for s in script)
-    print(f"drill: {', '.join(moves)} x{reps} ({total_s:.0f} s), profile {profile_path}")
+    print(f"drill: {', '.join(moves)} x{reps} ({total_s:.0f} s), pose {pose_name}, profile {profile_path}")
     print("in the drill window: q quits (the recording so far is kept), f fullscreen, s skeleton")
 
     views: list[View] = []
@@ -562,7 +623,19 @@ def run_drill(
     return path
 
 
-START_LABELS = ("run", "jump", "crouch", "lean_left", "lean_right", "punch_left", "punch_right", "aim")
+START_LABELS = (
+    "run",
+    "walk",
+    "wheel_open",
+    "wings",
+    "jump",
+    "crouch",
+    "lean_left",
+    "lean_right",
+    "punch_left",
+    "punch_right",
+    "aim",
+)
 
 
 def rep_header(script: list[Step], i: int) -> str:
