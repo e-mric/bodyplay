@@ -396,6 +396,9 @@ def _bar(c: T.Canvas, x: int, y: int, w: int, label: str, v: float, signed: bool
 
 def _status(st) -> str:
     """The one body state worth showing next to TRACKED."""
+    workout = getattr(st, "workout", "")
+    if workout:
+        return f"{'PUSH' if workout == 'pushup' else 'PULL'}-UPS {st.workout_reps}"
     if getattr(st, "flying", False):
         return "FLYING"
     if getattr(st, "wheel_open", False):

@@ -11,6 +11,7 @@ IMU/EMG gestures are NOT here: they live in firmware/lib/gestures (hard rule 5).
 from __future__ import annotations
 
 import math
+from collections import deque
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -45,7 +46,8 @@ class Pose:
 @dataclass
 class GestureEvent:
     name: str  # jump, crouch, step, run_start, run_stop, punch, aim_start, aim_end, shoot,
-    # wheel_open, wheel_close, stand (back up after a crouch), fly_start, fly_end
+    # wheel_open, wheel_close, stand (back up after a crouch), fly_start, fly_end,
+    # workout_start, workout_end, pushup, pullup (one per completed rep)
     t_us: int
     confidence: float
 
@@ -68,6 +70,8 @@ class BodyState:
     flying: bool = False  # arms spread like wings
     fly_roll: float = 0.0  # -1 (left wing down) .. 1 (right wing down)
     fly_pitch: float = 0.0  # -1 (hands up: nose up, stick back) .. 1 (hands down: nose down)
+    workout: str = ""  # "pushup" (in a plank) or "pullup" (hanging from a bar); "" = standing
+    workout_reps: int = 0  # reps in the current set
 
     def source(self, name: str) -> float:
         """Continuous sources referenced by profile bindings."""
@@ -91,6 +95,7 @@ class BodyState:
             "stopped": not self.running,
             "wheel_open": self.wheel_open,
             "flying": self.flying,
+            "working_out": bool(self.workout),
         }.get(name, False)
 
 
@@ -180,6 +185,12 @@ class WebcamGestures:
         self._wheel_lost_us: int | None = None
         self._fly_since_us: int | None = None
         self._fly_lost_us: int | None = None
+        self._posture_since_us: int | None = None  # plank / hang seen since, set not started yet
+        self._posture_lost_us: int | None = None
+        self._rep_armed = False  # push-up: been down; pull-up: hung with straight arms
+        self._tops: deque[tuple[int, float]] = deque()  # push-up: (t_us, shoulder height above hands)
+        self._settling = False  # getting back up after a set: standing gestures wait
+        self._settle_since_us = 0
         wp = self.params.webcam
         self._smooth = wp.smooth_min_cutoff_hz > 0
         args = (wp.smooth_min_cutoff_hz, wp.smooth_beta, wp.smooth_d_cutoff_hz)
@@ -229,18 +240,15 @@ class WebcamGestures:
                 self._filter_world.reset()
             else:
                 pose = self._smoothed(pose)
+        if pose is not None and self._workout(pose, events):
+            # Down on the floor or hanging from a bar (or getting there):
+            # nothing a standing body does means anything now.
+            self.state.visible = True
+            self._release(pose.t_us, events)
+            return events
         if pose is None or not self._visible(pose, L_SHOULDER, R_SHOULDER, L_HIP, R_HIP):
             self.state.visible = False
-            self._check_stop(pose.t_us if pose else None, events)
-            t = pose.t_us if pose else 0
-            if self.state.aiming:
-                self.state.aiming = False
-                events.append(GestureEvent("aim_end", t, 1.0))
-            if self.state.wheel_open:
-                self._close_wheel(t, events)
-            if self.state.flying:
-                self._land(t, events)
-            self._aim_since_us = self._aim_lost_us = self._flick = self._wheel_since_us = None
+            self._release(pose.t_us if pose else None, events)
             return events
         self.state.visible = True
         xy = pose.img[:, :2]
@@ -248,6 +256,9 @@ class WebcamGestures:
         hip = self._mid(xy[L_HIP], xy[R_HIP])
         torso = float(np.linalg.norm(sh - hip))
         if torso < 1e-6:
+            return events
+        if self._settling and not self._settled(pose.t_us, hip[1] / torso):
+            self._release(pose.t_us, events)
             return events
         conf = float(np.clip(pose.img[[L_SHOULDER, R_SHOULDER, L_HIP, R_HIP], 2].min(), 0, 1))
         self._run(pose, hip, torso, conf, events)
@@ -259,6 +270,147 @@ class WebcamGestures:
         self._aim(pose, torso, events)
         self._shoot(pose, torso, events)
         return events
+
+    def _release(self, t_us: int | None, events: list[GestureEvent]) -> None:
+        """No standing gestures this frame: let go of everything held and forget the
+        motion history, so the next frame that counts doesn't see a jump in it."""
+        self._check_stop(t_us, events)
+        t = t_us or 0
+        if self.state.aiming:
+            self.state.aiming = False
+            events.append(GestureEvent("aim_end", t, 1.0))
+        if self.state.wheel_open:
+            self._close_wheel(t, events)
+        if self.state.flying:
+            self._land(t, events)
+        self._aim_since_us = self._aim_lost_us = self._flick = self._wheel_since_us = None
+        self._fly_since_us = None
+        self._hip_hist = []
+        self._dip_start_us = None
+        for arm in self._arms:
+            arm.last_reach = None
+
+    # -- workout ---------------------------------------------------------------
+
+    def _elbow_deg(self, pose: Pose, arm: _Arm, torso_px: float) -> float:
+        (s, e, w), _ = self._arm_points(pose, arm, torso_px)
+        ua, fa = s - e, w - e
+        cosang = float(np.dot(ua, fa) / max(np.linalg.norm(ua) * np.linalg.norm(fa), 1e-9))
+        return math.degrees(math.acos(max(-1.0, min(1.0, cosang))))
+
+    def _pair(self, pose: Pose, left: int, right: int) -> np.ndarray | None:
+        """Visibility-weighted mean of a left/right landmark pair (image px). The far side
+        drops out when the camera can't see it (side-on)."""
+        v = pose.img[[left, right], 2]
+        ok = v >= self.params.webcam.min_visibility
+        if not ok.any():
+            return None
+        return np.average(pose.img[[left, right], :2][ok], axis=0, weights=v[ok])
+
+    def _hanging(self, pose: Pose, torso_px: float, reach: float) -> bool:
+        """Both hands above the shoulders by `reach` torso lengths and closer together
+        than spread wings: holding a bar overhead."""
+        if not self._visible(pose, L_SHOULDER, R_SHOULDER, L_WRIST, R_WRIST):
+            return False
+        xy = pose.img[:, :2] / torso_px
+        up = min(xy[L_SHOULDER, 1] - xy[L_WRIST, 1], xy[R_SHOULDER, 1] - xy[R_WRIST, 1])
+        return up > reach and float(np.linalg.norm(xy[L_WRIST] - xy[R_WRIST])) < self.params.webcam.fly_span
+
+    def _workout(self, pose: Pose, events: list[GestureEvent]) -> bool:
+        """Push-ups and pull-ups. Each completed rep fires one event. True while the body
+        is in a set or heading into one.
+
+        Push-ups work from any camera angle: on the floor, the hands are below the hips
+        by a good share of their drop below the shoulders (standing, the hands hang level
+        with the hips); a rep is the shoulders sinking toward the hands, then rising back
+        near the top of the last few seconds. Pull-ups: hanging from a bar, the elbows
+        bend past `pullup_top_deg` after hanging straight."""
+        wp = self.params.webcam
+        t = pose.t_us
+        sh = self._pair(pose, L_SHOULDER, R_SHOULDER)
+        wr = self._pair(pose, L_WRIST, R_WRIST)
+        hip = self._pair(pose, L_HIP, R_HIP)
+        if sh is None or wr is None or hip is None:
+            return self._posture(None, t, events)
+        arm_px = float(wr[1] - sh[1])  # shoulders' height above the hands
+        torso_px = float(np.linalg.norm(sh - hip))
+        floor = arm_px > 1e-6 and (wr[1] - hip[1]) / arm_px > wp.plank_hip
+        hang = torso_px > 1e-6 and self._hanging(
+            # Once hanging, the hands only need to stay above the shoulders (they're close
+            # to them at the top of a pull-up).
+            pose,
+            torso_px,
+            0.0 if self.state.workout == "pullup" else wp.hang_reach,
+        )
+        if self.state.workout != "pullup" and self.state.wheel_open:
+            hang = False  # pointing up at the wheel's top slot, not grabbing a bar
+        kind = "pushup" if floor else "pullup" if hang else None
+        if self.state.workout and kind != self.state.workout:
+            kind = None
+        busy = self._posture(kind, t, events)
+        if self.state.workout == "pushup" and floor:
+            self._tops.append((t, arm_px))
+            while t - self._tops[0][0] > wp.pushup_top_window_ms * 1000:
+                self._tops.popleft()
+            top = max(a for _, a in self._tops)
+            if arm_px < wp.pushup_down * top:
+                self._rep_armed = True
+            elif self._rep_armed and arm_px > wp.pushup_up * top:
+                self._rep(t, events)
+        elif self.state.workout == "pullup" and hang:
+            elbow = float(np.mean([self._elbow_deg(pose, a, torso_px) for a in self._arms]))
+            if elbow > wp.pullup_bottom_deg:
+                self._rep_armed = True
+            elif self._rep_armed and elbow < wp.pullup_top_deg:
+                self._rep(t, events)
+        return busy or kind is not None
+
+    def _posture(self, kind: str | None, t_us: int, events: list[GestureEvent]) -> bool:
+        """Start a set after `workout_hold_ms` in the posture, end it after
+        `workout_release_ms` out of it. True while a set runs."""
+        wp = self.params.webcam
+        if kind is not None:
+            self._posture_lost_us = None
+            if not self.state.workout:
+                self._posture_since_us = self._posture_since_us or t_us
+                if (t_us - self._posture_since_us) / 1000 >= wp.workout_hold_ms:
+                    self.state.workout, self.state.workout_reps = kind, 0
+                    self._rep_armed = False
+                    self._tops.clear()
+                    events.append(GestureEvent("workout_start", t_us, 1.0))
+            return bool(self.state.workout)
+        self._posture_since_us = None
+        if not self.state.workout:
+            return False
+        self._posture_lost_us = self._posture_lost_us or t_us
+        if (t_us - self._posture_lost_us) / 1000 < wp.workout_release_ms:
+            return True
+        self.state.workout = ""
+        self._posture_lost_us = None
+        self._settling, self._settle_since_us = True, t_us
+        events.append(GestureEvent("workout_end", t_us, 1.0))
+        return False
+
+    def _rep(self, t_us: int, events: list[GestureEvent]) -> None:
+        self._rep_armed = False
+        self.state.workout_reps += 1
+        events.append(GestureEvent(self.state.workout, t_us, 1.0))
+
+    def _settled(self, t_us: int, hip_h: float) -> bool:
+        """After a set, standing gestures resume once you're up: `workout_settle_ms`
+        passed and the hips are back at standing height (or, failing that, after four
+        times as long, from wherever they are now)."""
+        wp = self.params.webcam
+        waited_ms = (t_us - self._settle_since_us) / 1000
+        if waited_ms < wp.workout_settle_ms:
+            return False
+        up = self._hip_base is None or abs(hip_h - self._hip_base) < wp.jump_dip
+        if not up and waited_ms < 4 * wp.workout_settle_ms:
+            return False
+        if not up:
+            self._hip_base = None  # stood up somewhere else: learn the new standing level
+        self._settling = False
+        return True
 
     # -- run -----------------------------------------------------------------
 
@@ -505,6 +657,10 @@ class WebcamGestures:
         if self._visible(pose, R_SHOULDER, R_WRIST):
             above = xy[R_SHOULDER, 1] - xy[R_WRIST, 1]
             reach = above > wp.wheel_reach and abs(xy[R_WRIST, 0] - xy[R_SHOULDER, 0]) < wp.wheel_side
+            if not self.state.wheel_open and self._visible(pose, L_SHOULDER, L_WRIST):
+                # Both hands going up reach for a bar, not the backpack (pointing up comes
+                # after the wheel is open).
+                reach = reach and xy[L_SHOULDER, 1] - xy[L_WRIST, 1] < wp.hang_reach
         if reach:
             self._wheel_lost_us = None
             self._wheel_since_us = self._wheel_since_us or t

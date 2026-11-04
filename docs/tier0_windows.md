@@ -63,6 +63,14 @@ Then the Tier 0 extras (profile `tier0`, virtual pad only):
   is the same mode), then spread your arms like wings: tilt them to roll (your left hand
   down = roll left), raise both hands for nose up, lower them for nose down. Bring your
   arms in to let go of the stick.
+- **Push-ups and pull-ups:** each rep taps Cross / A, for in-game workouts (GTA V has
+  none, so this waits for GTA 6's controls). Push-ups: put the camera low (on the floor
+  works, from the front or the side) with your whole body in view; a set starts once your
+  hands are on the floor, and a rep counts when your shoulders sink toward your hands
+  and come back up. Pull-ups: the camera must see your hands on the bar down to
+  your hips; a rep counts when your elbows bend with your chin up. While you're down or
+  hanging, and for 1.5 s after you're back up, the other gestures pause. The drill panel
+  counts your reps.
 The YAML uses PlayStation button names; the Windows backend translates these to
 Xbox buttons (Cross → A, Square → X, Circle → B, Triangle → Y).
 
@@ -80,8 +88,9 @@ uv run bodyctl webcam-tune
 uv run bodyctl webcam-drill jump --reps 5
 ```
 
-Moves: `run`, `walk`, `jump`, `crouch`, `lean`, `punch`, `aim`, `shoot`, `wheel`, `fly`, or `all`. `walk` cues
-walk, jog, then sprint in place; `webcam-tune` sets the profile's `cadence_curve` (steps/s
+Moves: `run`, `walk`, `jump`, `crouch`, `lean`, `punch`, `aim`, `shoot`, `wheel`, `fly`, or `all`, plus
+`pushup` and `pullup` (only when named: they need the floor or a bar; `--reps` is the
+reps in one set). `walk` cues walk, jog, then sprint in place; `webcam-tune` sets the profile's `cadence_curve` (steps/s
 for half stick, full stick and sprint taps) from your own pace. Before each
 recording, a setup screen guides the camera: whole body in view, distance, camera
 level, and the camera angle. Always face the screen and move the camera. To make

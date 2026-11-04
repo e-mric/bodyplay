@@ -72,6 +72,11 @@ class BindingEngine:
         if flight is not None and self._in_modes(flight.modes) and state.condition("flying"):
             # Rule 4's one exception: the body flies (the port binding keeps the stick neutral).
             gp.set_stick(flight.stick, state.source("fly_roll"), state.source("fly_pitch"))
+        workout = extras.workout
+        if workout is not None and self._in_modes(workout.modes):
+            for name in events:
+                if name in ("pushup", "pullup"):
+                    gp.press(workout.tap, now_us)
         cover = extras.cover
         if cover is not None and self._in_modes(cover.modes):
             for name in events:

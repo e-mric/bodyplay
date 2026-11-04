@@ -137,6 +137,38 @@ class WebcamParams(_Strict):
         0.1, ge=0, description="Hands above/below the shoulders (torso lengths) below this = no pitch"
     )
     fly_pitch_full: float = Field(0.6, gt=0, description="Hand height for full pitch")
+    plank_hip: float = Field(
+        0.35,
+        gt=0,
+        description="Push-ups: hands below the hips by this share of their drop below the shoulders = on "
+        "the floor (standing ~0, plank 0.5 and up)",
+    )
+    hang_reach: float = Field(
+        0.5, gt=0, description="Pull-ups: both wrists this far above the shoulders (torso lengths) = hanging"
+    )
+    workout_hold_ms: int = Field(400, ge=0, description="Plank / hang held this long before a set starts")
+    workout_release_ms: int = Field(600, ge=0, description="Out of the posture this long before the set ends")
+    workout_settle_ms: int = Field(
+        1500,
+        ge=0,
+        description="After a set, standing gestures wait this long (and for your hips to be back up)",
+    )
+    pushup_down: float = Field(
+        0.65,
+        gt=0,
+        lt=1,
+        description="Push-up: shoulders below this share of their top height above the hands = down",
+    )
+    pushup_up: float = Field(
+        0.85, gt=0, le=1, description="Push-up: back above this share of the top = one rep"
+    )
+    pushup_top_window_ms: int = Field(3000, gt=0, description="Push-up: the top is the highest in this long")
+    pullup_bottom_deg: float = Field(
+        140, gt=0, lt=180, description="Pull-up: elbow above this = hanging straight"
+    )
+    pullup_top_deg: float = Field(
+        90, gt=0, lt=180, description="Pull-up: elbow below this = chin up, one rep"
+    )
     min_visibility: float = Field(0.5, ge=0, le=1, description="Ignore landmarks MediaPipe isn't sure of")
     smooth_min_cutoff_hz: float = Field(
         0.0, ge=0, description="One Euro landmark filter: cutoff when still (Hz); 0 = no smoothing"
@@ -330,6 +362,22 @@ class Flight(_Strict):
     modes: list[str] = Field(default_factory=lambda: ["plane", "heli"], description="Game modes it works in")
 
 
+class Workout(_Strict):
+    """Push-ups and pull-ups for in-game workouts: each rep taps a button."""
+
+    tap: str = Field(
+        "cross", description="Tapped once per push-up or pull-up rep (a guess until GTA 6's controls)"
+    )
+    modes: list[str] = Field(default_factory=lambda: ["on_foot"], description="Game modes it works in")
+
+    @field_validator("tap")
+    @classmethod
+    def _button(cls, v: str) -> str:
+        if v not in BUTTON_OUTPUTS:
+            raise ValueError(f"workout must tap a button, one of {sorted(BUTTON_OUTPUTS)}")
+        return v
+
+
 class Tier0Extras(_Strict):
     """Controls only the Tier 0 virtual pad drives: with every Access controller port
     taken, Tier 2+ leaves these to the DualSense. Not compiled into device profiles."""
@@ -337,6 +385,7 @@ class Tier0Extras(_Strict):
     weapon_wheel: WeaponWheel | None = None
     cover: Cover | None = None
     flight: Flight | None = None
+    workout: Workout | None = None
 
 
 ALLOWED_KINDS = {

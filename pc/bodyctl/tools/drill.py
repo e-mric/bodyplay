@@ -32,6 +32,12 @@ EXPECT: dict[str, tuple[str, float]] = {
     "wheel_close": ("wheel_close", 1.5),
     "wings": ("fly_start", 1.5),
     "land": ("fly_end", 1.5),
+    "plank": ("workout_start", 4.0),
+    "pushup": ("pushup", 3.0),
+    "get_up": ("workout_end", 3.0),
+    "hang": ("workout_start", 4.0),
+    "pullup": ("pullup", 3.5),
+    "drop": ("workout_end", 3.0),
     "run": ("run_start", 2.0),
     "stop": ("run_stop", 3.0),
     "jump": ("jump", 1.5),
@@ -62,7 +68,8 @@ FLY_TEXT = {
     "nose_down": "NOSE DOWN: lower both hands",
 }
 EARLY_S = 0.3
-MOVES = ("run", "walk", "jump", "crouch", "lean", "punch", "aim", "shoot", "wheel", "fly")
+MOVES = ("run", "walk", "jump", "crouch", "lean", "punch", "aim", "shoot", "wheel", "fly", "pushup", "pullup")
+WORKOUT_MOVES = ("pushup", "pullup")  # need the floor or a bar: not part of "all"
 
 # Where the camera sits relative to you while you face the screen: yaw in degrees,
 # + = camera off to your right. Record drills at several so gestures work from any of them.
@@ -153,6 +160,14 @@ def _reps(move: str, reps: int) -> list[Step]:
                 Step(label, FLY_TEXT[label], 2.5),
                 Step("land", "LAND: arms down", 2.5),
             ]
+        elif move == "pushup":  # one set: get down, `reps` push-ups, stand up
+            s += [Step("plank", "GET DOWN: plank, whole body in view", 5.0)] if i == 0 else []
+            s.append(Step("pushup", "PUSH-UP: down and up", 3.0))
+            s += [Step("get_up", "STAND UP", 4.0)] if i == reps - 1 else []
+        elif move == "pullup":  # one set: hang, `reps` pull-ups, drop down
+            s += [Step("hang", "HANG from the bar, arms straight", 5.0)] if i == 0 else []
+            s.append(Step("pullup", "PULL-UP: chin over the bar", 3.5))
+            s += [Step("drop", "DROP down and stand", 4.0)] if i == reps - 1 else []
         elif move == "aim":
             s += [Step("aim", "AIM and hold", 2.5), Step("aim_down", "arm DOWN", 2.5)]
         else:
@@ -171,6 +186,8 @@ HOW = {
     "shoot": "SHOOT: aim with your RIGHT arm, then flick the hand up like recoil",
     "wheel": "WHEEL: right hand over your right shoulder, LEFT hand points at a slot",
     "fly": "FLY: spread your arms like wings, tilt them to roll, raise or lower them to pitch",
+    "pushup": "PUSH-UPS: camera low, your whole body in view on the floor",
+    "pullup": "PULL-UPS: hang from the bar, camera sees hands to hips",
 }
 
 
@@ -635,6 +652,8 @@ START_LABELS = (
     "punch_left",
     "punch_right",
     "aim",
+    "pushup",
+    "pullup",
 )
 
 

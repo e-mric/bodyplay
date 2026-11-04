@@ -99,10 +99,13 @@ modes:
 # Crouch down to take cover (R1 / RB, a toggle), stand up to leave it.
 # In a plane or helicopter (mode heli), spread your arms like wings to fly: tilt them
 # to roll, raise both hands for nose up, lower them for nose down (rule 4 exception).
+# Push-ups (camera low, any angle) and pull-ups (hanging from a bar) tap X once per rep,
+# for in-game workouts; GTA V has none, so this is a placeholder for GTA 6.
 tier0:
   weapon_wheel: {hold: l1, select: right_stick}
   cover: {tap: r1}
   flight: {stick: left_stick}
+  workout: {tap: cross}
 
 # Left to the DualSense: R1 cover / handbrake, L3 stealth / horn, L1 weapon wheel,
 # D-pad phone, R3 look behind, aircraft yaw and landing gear, menus.

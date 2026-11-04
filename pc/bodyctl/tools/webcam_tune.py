@@ -76,6 +76,22 @@ GROUPS: dict[str, tuple[tuple[str, ...] | None, dict[str, list[float]]]] = {
         ("fly_start", "fly_end"),
         {"webcam.fly_span": [1.5, 2.0, 2.5, 3.0], "webcam.fly_hold_ms": [150, 300, 500]},
     ),
+    "workout": (
+        ("workout_start", "workout_end", "pushup", "pullup"),
+        {
+            "webcam.plank_hip": [0.25, 0.35, 0.5],
+            "webcam.hang_reach": [0.3, 0.5, 0.7],
+            "webcam.workout_hold_ms": [200, 400],
+        },
+    ),
+    "pushup": (
+        ("pushup",),
+        {"webcam.pushup_down": [0.55, 0.65, 0.75], "webcam.pushup_up": [0.8, 0.85, 0.9]},
+    ),
+    "pullup": (
+        ("pullup",),
+        {"webcam.pullup_top_deg": [70, 90, 110], "webcam.pullup_bottom_deg": [130, 140, 150, 160]},
+    ),
     "wheel": (
         ("wheel_open", "wheel_close"),
         {"webcam.wheel_reach": [0.1, 0.2, 0.3, 0.45], "webcam.wheel_hold_ms": [80, 150, 250]},

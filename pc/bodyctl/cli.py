@@ -106,10 +106,11 @@ def cmd_webcam(args: argparse.Namespace) -> int:
 
 def cmd_webcam_drill(args: argparse.Namespace) -> int:
     from bodyctl.sensors.webcam_pose import pose_label
-    from bodyctl.tools.drill import ANGLES, MOVES, run_drill
+    from bodyctl.tools.drill import ANGLES, MOVES, WORKOUT_MOVES, run_drill
     from bodyctl.tools.webcam_tune import default_profile
 
-    moves = list(MOVES) if "all" in args.moves else list(dict.fromkeys(args.moves))
+    standing = [m for m in MOVES if m not in WORKOUT_MOVES]
+    moves = standing if "all" in args.moves else list(dict.fromkeys(args.moves))
     angles = [a.strip() for a in args.angles.split(",") if a.strip()]
     bad = [a for a in angles if a not in ANGLES]
     if bad:
@@ -478,8 +479,23 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument(
         "moves",
         nargs="+",
-        choices=["run", "walk", "jump", "crouch", "lean", "punch", "aim", "shoot", "wheel", "fly", "all"],
+        choices=[
+            "run",
+            "walk",
+            "jump",
+            "crouch",
+            "lean",
+            "punch",
+            "aim",
+            "shoot",
+            "wheel",
+            "fly",
+            "pushup",
+            "pullup",
+            "all",
+        ],
         metavar="MOVE",
+        help="moves to drill; all = every standing move (pushup and pullup only when named)",
     )
     sp.add_argument("--reps", type=int, default=8, help="repetitions of each move")
     sp.add_argument(
