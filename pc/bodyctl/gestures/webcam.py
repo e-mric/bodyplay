@@ -352,7 +352,9 @@ class WebcamGestures:
         wr = self._pair(pose, L_WRIST, R_WRIST)
         hip = self._pair(pose, L_HIP, R_HIP)
         if sh is None or wr is None or hip is None:
-            return self._posture(None, t, events)
+            # The camera lost a hand or the hips for a moment: that's not standing up, so a
+            # set carries on (it ends only when the body is seen out of the posture).
+            return bool(self.state.workout) or self._posture(None, t, events)
         arm_px = float(wr[1] - sh[1])  # shoulders' height above the hands
         torso_px = float(np.linalg.norm(sh - hip))
         floor = arm_px > 1e-6 and (wr[1] - hip[1]) / arm_px > wp.plank_hip

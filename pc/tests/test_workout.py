@@ -190,3 +190,13 @@ def test_drill_scores_pushups():
     sc = wt.score(rec, load_profile(GTA5).gestures)
     assert sc.events["pushup"].hits == 5 and sc.events["pushup"].false == 0
     assert sc.events["workout_start"].hits == 1 and sc.events["workout_end"].hits == 1
+
+
+def test_set_survives_the_camera_losing_the_hands():
+    f = pushup_set(5)
+    for i in range(int(6.0 * 30), int(7.0 * 30)):  # a second without hands or hips mid-set
+        f.imgs[i] = f.imgs[i].copy()
+        f.imgs[i][[W.L_WRIST, W.R_WRIST, W.L_HIP, W.R_HIP], 2] = 0.1
+    events, _ = run(f)
+    names = [n for n, _ in events]
+    assert names.count("workout_start") == 1 and names.count("workout_end") == 1
