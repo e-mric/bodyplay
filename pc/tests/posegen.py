@@ -94,29 +94,35 @@ class Timeline:
     def shift_body(self, i0: int, i1: int, dy_px: np.ndarray) -> None:
         self.img[i0:i1, :, 1] += dy_px[:, None]
 
+    def shift_upper(self, i0: int, i1: int, dy_px: np.ndarray) -> None:
+        """Hips and everything above move, knees and feet stay: the knees bend."""
+        self.img[i0:i1, : W.L_KNEE, 1] += dy_px[:, None]
+
     def jump(self, t0_s: float, dip_torso: float = 0.15, dip_s: float = 0.2, air_s: float = 0.35) -> float:
         """Dip, push up, flight, land. Returns the reversal time (bottom of the dip)."""
         i0 = self.idx(t0_s)
         nd = self.idx(dip_s)
         k = np.arange(nd)
-        self.shift_body(i0, i0 + nd, dip_torso * TORSO_PX * np.sin(0.5 * np.pi * k / nd))
+        self.shift_upper(i0, i0 + nd, dip_torso * TORSO_PX * np.sin(0.5 * np.pi * k / nd))
         rev = i0 + nd
         na = self.idx(air_s)
         k = np.arange(na)
         path = dip_torso * TORSO_PX * np.cos(np.pi * k / na) - 0.5 * TORSO_PX * np.sin(np.pi * k / na)
-        self.shift_body(rev, rev + na, path)
+        # Legs straighten while the hips are still low (path > 0), then the whole body flies.
+        self.shift_upper(rev, rev + na, np.maximum(path, 0))
+        self.shift_body(rev, rev + na, np.minimum(path, 0))
         return rev / self.fps
 
     def squat_hold(self, t0_s: float, hold_s: float, depth_torso: float = 0.2) -> None:
         i0 = self.idx(t0_s)
         nd = self.idx(0.4)
         k = np.arange(nd)
-        self.shift_body(i0, i0 + nd, depth_torso * TORSO_PX * np.sin(0.5 * np.pi * k / nd))
+        self.shift_upper(i0, i0 + nd, depth_torso * TORSO_PX * np.sin(0.5 * np.pi * k / nd))
         nh = self.idx(hold_s)
-        self.shift_body(i0 + nd, i0 + nd + nh, np.full(nh, depth_torso * TORSO_PX))
+        self.shift_upper(i0 + nd, i0 + nd + nh, np.full(nh, depth_torso * TORSO_PX))
         nu = self.idx(0.6)
         k = np.arange(nu)
-        self.shift_body(
+        self.shift_upper(
             i0 + nd + nh, i0 + nd + nh + nu, depth_torso * TORSO_PX * np.cos(0.5 * np.pi * k / nu)
         )
 

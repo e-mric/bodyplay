@@ -92,7 +92,7 @@ def test_dashboard_draws():
     dash.flash()
     frame = np.zeros((480, 640, 3), np.uint8)
     img = dash.draw(frame, pose, BodyState(visible=True), Report(), "on_foot", "a n=1 p50=1.0", 30.0, 500_000)
-    assert img.shape == (480, 940, 3)
+    assert img.shape == (810, 1440, 3)  # the drill window's layout
     assert img[5, 5].tolist() == [255, 255, 255]  # corner flash on this frame
     img2 = dash.draw(frame, pose, BodyState(), Report(), "on_foot", "", 30.0, 600_000)
     assert img2[5, 5].tolist() == [0, 0, 0]  # and off on the next

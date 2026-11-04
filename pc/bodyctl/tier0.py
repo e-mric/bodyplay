@@ -81,6 +81,9 @@ def run_webcam(
     model: str = "lite",
     show: bool = True,
     pose: str = "auto",
+    window: tuple[int, int, int, int] | None = None,
+    topmost: bool = False,
+    pad: str = "xbox",
 ) -> int:
     from bodyctl.sensors.webcam_pose import Camera, open_pose
     from bodyctl.tools.dashboard import Dashboard
@@ -94,7 +97,7 @@ def run_webcam(
         cleanup.callback(cam.close)
         print(f"camera {camera_index}: {cam.size[0]}x{cam.size[1]} @ {cam.fps:.0f} fps; Ctrl+C or q to quit")
         app = Tier0(profile, gamepad)
-        dash = Dashboard() if show else None
+        dash = Dashboard(rect=window, topmost=topmost, pad_kind=pad) if show else None
         if dash:
             cleanup.callback(dash.close)
             # Every marker pulse also flashes the dashboard corner (fallback marker).

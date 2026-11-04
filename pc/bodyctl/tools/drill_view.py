@@ -88,6 +88,9 @@ class Panel:
     state: object | None = None  # BodyState while drilling
     events: list[tuple[float, str, bool]] | None = None  # (age s, name, expected), newest first
     tally: dict | None = None  # event -> EventScore, live
+    pad: list[str] | None = None  # live play: latency lines
+    report: object | None = None  # gamepad Report: drawn as the controller picture
+    pad_kind: str = "xbox"  # xbox or dualsense (pad_view.PADS)
 
 
 @dataclass
@@ -99,6 +102,7 @@ class Hud:
     frames: int = 0
     parts: dict[str, float] = field(default_factory=dict)  # visibility per METER_PARTS key
     quality: Sequence[float] = ()  # recent frames, oldest first, 0..1
+    tag: str = ""  # replaces REC / STANDBY (live play: "LIVE")
 
 
 def part_visibility(pose) -> dict[str, float]:
@@ -323,9 +327,9 @@ def _viewfinder(c: T.Canvas, box, hud: Hud) -> None:
     d = c.draw
     x0, y0, x1, y1 = box
     mono = T.font("body", 17)
-    if hud.recording:
+    if hud.recording or hud.tag:
         d.ellipse((x0 + 22, y0 + 23, x0 + 34, y0 + 35), fill=(255, 60, 70))
-        d.text((x0 + 42, y0 + 19), f"REC  {hud.size[1]}p", font=mono, fill=T.CREAM)
+        d.text((x0 + 42, y0 + 19), f"{hud.tag or 'REC'}  {hud.size[1]}p", font=mono, fill=T.CREAM)
     else:
         d.ellipse((x0 + 22, y0 + 23, x0 + 34, y0 + 35), outline=T.CREAM, width=2)
         d.text((x0 + 42, y0 + 19), f"STANDBY  {hud.size[1]}p", font=mono, fill=T.CREAM)
@@ -438,15 +442,39 @@ def _panel(c: T.Canvas, p: Panel) -> None:
         if not p.events:
             c.draw.text((x, y), "nothing yet", font=T.font("body", 17), fill=T.LAVENDER)
             y += 30
-        for age, name, ok in p.events[:3]:
+        for age, name, ok in p.events[: 2 if p.report is not None else 3]:
             y = _row(c, x, y, w, f"{name.replace('_', ' ').upper()}   {age:.1f}s ago", ok, h=30, size=15) + 5
     if p.tally:
         y = _section(c, x, y + 2, w, "SCORE")
-        for name, sc in list(p.tally.items())[:3]:
+        for name, sc in list(p.tally.items())[: 2 if p.report is not None else 3]:
             hits = f"{sc.hits}/{sc.expected}" if sc.expected else "-"
             line = f"{name.replace('_', ' '):<10}{hits:>6}  false {sc.false}"
             c.draw.text((x, y), line, font=T.font("mono", 18), fill=T.CREAM)
             y += 24
+    if p.pad:
+        for line in p.pad:
+            c.draw.text((x, y + 4), line, font=T.font("mono", 15), fill=T.LAVENDER)
+            y += 20
+    if p.report is not None:
+        _pad(c, p, x, y + 4, w, PANEL[3] - 16)
+
+
+def _pad(c: T.Canvas, p: Panel, x: int, y: int, w: int, bottom: int) -> None:
+    """The controller picture, as large as the space left allows, buttons lit."""
+    from bodyctl.tools import pad_view
+
+    y = _section(c, x, y, w, "PAD")
+    credit = pad_view.PADS[p.pad_kind].credit
+    if credit:  # the model's author, under the picture
+        bottom -= 14
+        size = T.fit_size(credit, "body", 11, w - 56)  # clear of the panel's corner marks
+        c.draw.text((x + w // 2, bottom + 2), credit, font=T.font("body", size), fill=T.LAVENDER, anchor="ma")
+    width = min(w, pad_view.width_for_height(p.pad_kind, bottom - y))
+    if width < 120:
+        return
+    r = p.report
+    img = pad_view.render(p.pad_kind, width, r.buttons, r.left, r.right, r.l2, r.r2)
+    c.paste(img, (x + (w - width) // 2, y))
 
 
 def _meters(c: T.Canvas, hud: Hud) -> None:
@@ -523,14 +551,21 @@ def report_image(report: str, complete: bool) -> np.ndarray:
 # --- window -----------------------------------------------------------------------------
 
 
-def open_window(window: str) -> None:
-    """Resizable, keeps its shape, and opens at ~90 % of the screen."""
+def open_window(window: str, rect: tuple[int, int, int, int] | None = None, topmost: bool = False) -> None:
+    """Resizable, keeps its shape, and opens at ~90 % of the screen, or at rect (x, y, w, h)."""
     import cv2
 
     cv2.namedWindow(window, cv2.WINDOW_NORMAL | cv2.WINDOW_KEEPRATIO)
-    sw, sh = screen_size()
-    k = min(0.92 * sw / DISPLAY_W, 0.85 * sh / DISPLAY_H)
-    cv2.resizeWindow(window, int(DISPLAY_W * k), int(DISPLAY_H * k))
+    if rect is None:
+        sw, sh = screen_size()
+        k = min(0.92 * sw / DISPLAY_W, 0.85 * sh / DISPLAY_H)
+        cv2.resizeWindow(window, int(DISPLAY_W * k), int(DISPLAY_H * k))
+    else:
+        x, y, w, h = rect
+        cv2.moveWindow(window, x, y)
+        cv2.resizeWindow(window, w, h)
+    if topmost and hasattr(cv2, "WND_PROP_TOPMOST"):
+        cv2.setWindowProperty(window, cv2.WND_PROP_TOPMOST, 1)
 
 
 def screen_size() -> tuple[int, int]:

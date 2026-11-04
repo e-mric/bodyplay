@@ -54,6 +54,8 @@ that Bodyplay doesn't cover yet.
 Start on foot and check one action at a time: run, stop, lean, jump, punch, aim.
 Then the Tier 0 extras (profile `tier0`, virtual pad only):
 
+- **Aim:** point either arm straight at the screen and hold it (a fist held up in guard
+  doesn't aim; running in place never punches).
 - **Shoot:** while aiming, flick the aiming hand up like recoil (fires RT / R2).
 - **Weapon wheel:** reach over your right shoulder and keep the hand there (holds LB /
   L1), point your left hand at a slot (right stick; a hanging arm selects nothing),
@@ -73,6 +75,10 @@ Then the Tier 0 extras (profile `tier0`, virtual pad only):
   counts your reps.
 The YAML uses PlayStation button names; the Windows backend translates these to
 Xbox buttons (Cross → A, Square → X, Circle → B, Triangle → Y).
+
+The dashboard looks like the drill window and shows the controller (`--pad xbox`, the
+default, or `--pad dualsense`) with the buttons the body presses lit up. To keep it next
+to a windowed game: `--window X,Y,W,H --on-top` (e.g. `--window 40,118,1500,844`).
 
 Dashboard keys only work while its window has focus: **p** pauses body input,
 **m** changes mode, **q** quits. Alt-tab to the dashboard before using those keys.

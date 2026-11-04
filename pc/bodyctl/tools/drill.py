@@ -182,8 +182,8 @@ HOW = {
     "crouch": "CROUCH: bend your knees and hold",
     "lean": "LEAN: tilt your shoulders sideways, feet planted",
     "punch": "PUNCH: fast and straight ahead, at the screen",
-    "aim": "AIM: RIGHT arm straight ahead, at the screen",
-    "shoot": "SHOOT: aim with your RIGHT arm, then flick the hand up like recoil",
+    "aim": "AIM: one arm straight ahead, at the screen",
+    "shoot": "SHOOT: aim with one arm, then flick the hand up like recoil",
     "wheel": "WHEEL: right hand over your right shoulder, LEFT hand points at a slot",
     "fly": "FLY: spread your arms like wings, tilt them to roll, raise or lower them to pitch",
     "pushup": "PUSH-UPS: camera low, your whole body in view on the floor",
@@ -471,11 +471,14 @@ def run_drill(
     sound: bool = True,
     angle: str = "front",
     pose: str = "auto",
+    pad: str = "xbox",
 ) -> Path | None:
     import cv2
 
     from bodyctl.config.profile import load_profile
     from bodyctl.gestures.webcam import WebcamGestures
+    from bodyctl.mapping import BindingEngine
+    from bodyctl.output.gamepad import DryRunBackend, Gamepad
     from bodyctl.sensors.webcam_pose import Camera, open_pose
     from bodyctl.tools import drill_view as V
     from bodyctl.tools.webcam_tune import format_scores, match_cues, score
@@ -502,6 +505,9 @@ def run_drill(
         }
     )
     gestures = WebcamGestures(prof.gestures)
+    # What the profile would press: shown on the controller picture, never sent anywhere.
+    gamepad = Gamepad(DryRunBackend(), prof.press.hold_ms, prof.press.release_ms)
+    engine = BindingEngine(prof, gamepad)
     beep = _Beeper(sound)
     writer = None
     if video:
@@ -600,9 +606,15 @@ def run_drill(
                 views.append(measure_view(pose, f.shape[0]))
             if writer is not None:
                 writer.write(f)
-            for e in gestures.update(pose):
+            events = gestures.update(pose)
+            for e in events:
                 if e.name != "step":
                     detections.append((t, e.name, e.name in expected))
+            flying = step.label in FLY or step.label in ("wings", "land")
+            mode = "heli" if flying and prof.mode_for("heli") is not None else "on_foot"
+            if mode != engine.mode:
+                engine.set_mode(mode, t)
+            engine.apply(gestures.state, events, t)
             missing = required_missing(missing_parts(pose))
             sub = f"next: {nxt}" + (f"   OUT OF VIEW: {', '.join(missing)}" if missing else "")
             style = "action" if step.is_action else "idle"
@@ -612,6 +624,8 @@ def run_drill(
                 state=gestures.state,
                 events=[((t - td) / 1e6, n, ok) for (td, n, ok) in reversed(detections)],
                 tally=match_cues(rec.cues, [(td, n) for (td, n, _) in detections]),
+                report=gamepad.report,
+                pad_kind=pad,
             )
             key = keys(V.render(f, pose, step.text, sub, style, progress, panel, hud, show_skeleton))
             if key == ord("q"):

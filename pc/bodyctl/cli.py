@@ -101,6 +101,9 @@ def cmd_webcam(args: argparse.Namespace) -> int:
         args.model,
         show=not args.no_dashboard,
         pose=args.pose,
+        window=tuple(int(v) for v in args.window.split(",")) if args.window else None,
+        topmost=args.on_top,
+        pad=args.pad,
     )
 
 
@@ -132,6 +135,7 @@ def cmd_webcam_drill(args: argparse.Namespace) -> int:
             sound=not args.no_sound,
             angle=angle,
             pose=args.pose,
+            pad=args.pad,
         )
         if path is None:
             print("quit")
@@ -469,6 +473,9 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--model", choices=["lite", "full", "heavy"], default="lite", help="pose model")
     sp.add_argument("--marker-port", help="serial port of the marker LED board (firmware env marker)")
     sp.add_argument("--no-dashboard", action="store_true", help="print events instead of a window")
+    sp.add_argument("--window", metavar="X,Y,W,H", help="dashboard position and size, e.g. 40,118,1500,844")
+    sp.add_argument("--on-top", action="store_true", help="keep the dashboard above other windows (the game)")
+    sp.add_argument("--pad", choices=["xbox", "dualsense"], default="xbox", help="controller picture")
     sp.add_argument("--verbose", action="store_true", help="dry-run: print every gamepad report")
 
     sp = add(
@@ -512,6 +519,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("-o", "--out", default="data/drills")
     sp.add_argument("--video", action="store_true", help="also save the camera video (.mp4)")
     sp.add_argument("--no-sound", action="store_true", help="no beep on each cue")
+    sp.add_argument("--pad", choices=["xbox", "dualsense"], default="xbox", help="controller picture")
 
     sp = add("webcam-tune", "Tier 0: tune gesture thresholds on drill recordings", cmd_webcam_tune)
     sp.add_argument("recordings", nargs="*", help="drill .npz files (default: all in data/drills)")

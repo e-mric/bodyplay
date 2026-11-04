@@ -3,7 +3,9 @@
 Distances are in torso lengths (shoulder center to hip center) so thresholds
 don't depend on how far you stand from the camera. Each detector fires as early
 as the camera allows: a step on the knee crossing its lift threshold (not at the
-peak), a jump on the dip reversing upward.
+peak), a jump on the dip reversing upward. Dips and crouches are measured as the
+knees bending (the hip-to-knee gap shrinking), so stepping closer or farther from
+the camera doesn't look like crouching.
 
 IMU/EMG gestures are NOT here: they live in firmware/lib/gestures (hard rule 5).
 """
@@ -173,6 +175,7 @@ class WebcamGestures:
         self._last_step_leg = -1
         self._last_interval_s: float | None = None
         self._hip_base: float | None = None
+        self._thigh_base: float | None = None  # standing hip-to-knee gap, torso lengths
         self._hip_hist: list[tuple[int, float]] = []
         self._dip_start_us: int | None = None
         self._crouch_sent = False
@@ -180,6 +183,7 @@ class WebcamGestures:
         self._aim_since_us: int | None = None
         self._aim_lost_us: int | None = None
         self._flick: tuple[int, float] | None = None  # (t_us, wrist height above shoulder)
+        self._aim_arm = 1  # index in _arms of the arm that aims (or last aimed): right first
         self._last_shot_us = -(10**12)
         self._wheel_since_us: int | None = None
         self._wheel_lost_us: int | None = None
@@ -257,7 +261,7 @@ class WebcamGestures:
         torso = float(np.linalg.norm(sh - hip))
         if torso < 1e-6:
             return events
-        if self._settling and not self._settled(pose.t_us, hip[1] / torso):
+        if self._settling and not self._settled(pose.t_us, self._thigh(pose, hip, torso)):
             self._release(pose.t_us, events)
             return events
         conf = float(np.clip(pose.img[[L_SHOULDER, R_SHOULDER, L_HIP, R_HIP], 2].min(), 0, 1))
@@ -396,19 +400,19 @@ class WebcamGestures:
         self.state.workout_reps += 1
         events.append(GestureEvent(self.state.workout, t_us, 1.0))
 
-    def _settled(self, t_us: int, hip_h: float) -> bool:
+    def _settled(self, t_us: int, thigh: float | None) -> bool:
         """After a set, standing gestures resume once you're up: `workout_settle_ms`
-        passed and the hips are back at standing height (or, failing that, after four
-        times as long, from wherever they are now)."""
+        passed and the legs are straight again (or, failing that, after four times as
+        long, from wherever they are now)."""
         wp = self.params.webcam
         waited_ms = (t_us - self._settle_since_us) / 1000
         if waited_ms < wp.workout_settle_ms:
             return False
-        up = self._hip_base is None or abs(hip_h - self._hip_base) < wp.jump_dip
+        up = self._thigh_base is None or (thigh is not None and abs(self._thigh_base - thigh) < wp.jump_dip)
         if not up and waited_ms < 4 * wp.workout_settle_ms:
             return False
-        if not up:
-            self._hip_base = None  # stood up somewhere else: learn the new standing level
+        if not up:  # stood up differently: learn the new standing levels
+            self._hip_base = self._thigh_base = None
         self._settling = False
         return True
 
@@ -419,14 +423,25 @@ class WebcamGestures:
     ) -> None:
         p = self.params
         t = pose.t_us
-        for li, leg in enumerate(self._legs):
+        lifts: list[float | None] = []
+        for leg in self._legs:
             if not self._visible(pose, leg.knee):
+                lifts.append(None)
                 continue
             s = (pose.img[leg.knee, 1] - hip[1]) / torso  # knee below hip, in torso lengths
             if leg.baseline is None:
                 leg.baseline = s
-            lift = leg.baseline - s
-            if not leg.lifted and lift > p.webcam.knee_lift:
+            lifts.append(leg.baseline - s)
+        for li, leg in enumerate(self._legs):
+            lift = lifts[li]
+            if lift is None:
+                continue
+            s = leg.baseline - lift
+            other = lifts[1 - li]
+            # A step lifts one knee off a straight standing leg; both knees "rising" toward
+            # the hips together is the knees bending (a dip, a crouch, kneeling down).
+            standing_leg = other is None or other < p.webcam.knee_lift / 2
+            if not leg.lifted and lift > p.webcam.knee_lift and standing_leg:
                 leg.lifted = True
                 self._step(li, t, conf, events)
             elif leg.lifted and lift < p.webcam.knee_lift / 2:
@@ -477,23 +492,35 @@ class WebcamGestures:
 
     # -- jump ----------------------------------------------------------------
 
+    def _thigh(self, pose: Pose, hip: np.ndarray, torso: float) -> float | None:
+        """Vertical hip-to-knee gap of the straighter leg, in torso lengths: it shrinks as
+        the knees bend, wherever you stand; a running knee lift only shortens the lifted
+        leg. None without a visible knee."""
+        gaps = [(pose.img[k, 1] - hip[1]) / torso for k in (L_KNEE, R_KNEE) if self._visible(pose, k)]
+        return max(gaps) if gaps else None
+
     def _jump(
         self, pose: Pose, hip: np.ndarray, torso: float, conf: float, events: list[GestureEvent]
     ) -> None:
         p = self.params
         t = pose.t_us
         h = hip[1] / torso  # image y grows downward: a dip makes h larger
+        thigh = self._thigh(pose, hip, torso)
         self._hip_hist.append((t, h))
         self._hip_hist = self._hip_hist[-4:]
         if self._hip_base is None:
             self._hip_base = h
+        if self._thigh_base is None and thigh is not None:
+            self._thigh_base = thigh
             return
         vel = 0.0
         if len(self._hip_hist) >= 2:
             (t0, h0), (t1, h1) = self._hip_hist[-2], self._hip_hist[-1]
             if t1 > t0:
                 vel = (h1 - h0) / ((t1 - t0) / 1e6)  # torso/s, negative = rising
-        rel = h - self._hip_base
+        rise = h - self._hip_base  # hips above (-) / below (+) standing height
+        # Knee bend (torso lengths); hip height only without a visible knee.
+        rel = self._thigh_base - thigh if thigh is not None and self._thigh_base is not None else rise
         in_dip = rel > p.webcam.jump_dip
         since_jump_ms = (t - self._last_jump_us) / 1000
         if in_dip and self._dip_start_us is None:
@@ -502,7 +529,14 @@ class WebcamGestures:
         if self._dip_start_us is not None:
             dip_ms = (t - self._dip_start_us) / 1000
             rising = vel < -p.webcam.jump_rise_speed
-            if rising and dip_ms >= p.jump.dip_min_ms and since_jump_ms > p.webcam.jump_refractory_ms:
+            # Rising out of a held crouch is standing up, not a jump.
+            crouched = self._crouch_sent or self.state.crouching
+            if (
+                rising
+                and not crouched
+                and dip_ms >= p.jump.dip_min_ms
+                and since_jump_ms > p.webcam.jump_refractory_ms
+            ):
                 events.append(GestureEvent("jump", t, conf))
                 self._last_jump_us = t
                 self._dip_start_us = None
@@ -512,16 +546,21 @@ class WebcamGestures:
                 events.append(GestureEvent("crouch", t, conf))
                 self._crouch_sent = True
                 self.state.crouching = True
-        elif rel < -1.5 * p.webcam.jump_dip and vel < -p.webcam.jump_rise_speed:
+        elif rise < -1.5 * p.webcam.jump_dip and vel < -p.webcam.jump_rise_speed:
             # Jumped without a visible dip: fire late rather than never.
-            if since_jump_ms > p.webcam.jump_refractory_ms:
+            if since_jump_ms > p.webcam.jump_refractory_ms and not self.state.crouching:
                 events.append(GestureEvent("jump", t, conf * 0.8))
                 self._last_jump_us = t
         if self.state.crouching and rel < p.webcam.jump_dip / 2:  # hips back up: stood up
             self.state.crouching = False
+            self._dip_start_us = None
+            self._last_jump_us = t  # the overshoot of standing up isn't a jump either
             events.append(GestureEvent("stand", t, conf))
         if abs(rel) < p.webcam.jump_dip / 2 and abs(vel) < p.webcam.jump_rise_speed / 2:
+            # Legs straight and still: standing. Both levels follow you as you move around.
             self._hip_base += 0.02 * (h - self._hip_base)
+            if thigh is not None and self._thigh_base is not None:
+                self._thigh_base += 0.02 * (thigh - self._thigh_base)
 
     # -- lean ----------------------------------------------------------------
 
@@ -551,8 +590,14 @@ class WebcamGestures:
 
     def _punch(self, pose: Pose, torso_px: float, events: list[GestureEvent]) -> None:
         wp = self.params.webcam
-        # Reaching for the wheel, pointing and spreading wings aren't punches.
-        quiet = self.state.wheel_open or self._wheel_since_us is not None or self._fly_since_us is not None
+        # Reaching for the wheel, pointing, spreading wings and the arm swing of running
+        # in place aren't punches.
+        quiet = (
+            self.state.wheel_open
+            or self._wheel_since_us is not None
+            or self._fly_since_us is not None
+            or self.state.running
+        )
         for arm in self._arms:
             if not self._visible(pose, arm.shoulder, arm.elbow, arm.wrist):
                 arm.last_reach = None
@@ -579,20 +624,33 @@ class WebcamGestures:
             arm.last_reach = reach
             arm.last_t_us = pose.t_us
 
-    def _aim(self, pose: Pose, torso_px: float, events: list[GestureEvent]) -> None:
+    def _aim_pose(self, pose: Pose, arm: _Arm, torso_px: float) -> bool:
         wp = self.params.webcam
-        arm = self._arms[1]  # right arm aims
-        aim_pose = False
-        if self._visible(pose, arm.shoulder, arm.elbow, arm.wrist):
-            (s, _e, w), _ = self._arm_points(pose, arm, torso_px)
-            if pose.world is not None:
-                forward = s[2] - w[2]  # wrist closer to the camera than the shoulder
-                height = abs(w[1] - s[1])
-                aim_pose = forward > wp.aim_forward and height < wp.aim_height
-            else:
-                # 2D fallback: wrist raised to shoulder height and close to it in the image
-                # (an arm pointing at the camera foreshortens).
-                aim_pose = abs(w[1] - s[1]) < wp.aim_height and np.linalg.norm(w[:2] - s[:2]) < 0.6
+        if not self._visible(pose, arm.shoulder, arm.elbow, arm.wrist):
+            return False
+        (s, e, w), _ = self._arm_points(pose, arm, torso_px)
+        if pose.world is not None:
+            forward = s[2] - w[2]  # wrist closer to the camera than the shoulder
+            return forward > wp.aim_forward and abs(w[1] - s[1]) < wp.aim_height
+        # 2D fallback: elbow and wrist raised to shoulder height (a guarding fist keeps its
+        # elbow down) and the arm short in the image (pointing at the camera foreshortens).
+        return (
+            abs(w[1] - s[1]) < wp.aim_height
+            and abs(e[1] - s[1]) < wp.aim_height
+            and np.linalg.norm(w[:2] - s[:2]) < 0.6
+        )
+
+    def _aim(self, pose: Pose, torso_px: float, events: list[GestureEvent]) -> None:
+        """Either arm aims, the right one first; while aiming, only that arm counts."""
+        wp = self.params.webcam
+        if self.state.aiming:
+            aim_pose = self._aim_pose(pose, self._arms[self._aim_arm], torso_px)
+        else:
+            k = next((k for k in (1, 0) if self._aim_pose(pose, self._arms[k], torso_px)), None)
+            aim_pose = k is not None
+            if k is not None and k != self._aim_arm:
+                self._aim_arm, self._aim_since_us = k, None
+        arm = self._arms[self._aim_arm]
         t = pose.t_us
         # A punch passes through the aim pose: only a steady arm aims, and the hold
         # timer restarts after every punch.
@@ -621,11 +679,11 @@ class WebcamGestures:
     # -- shoot -----------------------------------------------------------------
 
     def _shoot(self, pose: Pose, torso_px: float, events: list[GestureEvent]) -> None:
-        """Recoil flick: while aiming, the right wrist jumps up relative to the shoulder.
+        """Recoil flick: while aiming, the aiming wrist jumps up relative to the shoulder.
         Costly action (rule 7): gated on aiming here and in the binding, and on the arm
         keypoints' confidence."""
         wp = self.params.webcam
-        arm = self._arms[1]
+        arm = self._arms[self._aim_arm]
         if not self.state.aiming or not self._visible(pose, arm.shoulder, arm.wrist):
             self._flick = None
             return

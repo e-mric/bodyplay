@@ -29,3 +29,6 @@ ml/*.onnx
 .DS_Store
 Thumbs.db
 .idea/
+
+# 3D sources too big for git (renders in pc/bodyctl/assets/pads/ are committed)
+assets/playstation-5-dualsense/
