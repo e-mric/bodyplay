@@ -68,6 +68,10 @@ class BindingEngine:
             gp.hold(wheel.hold, open_, now_us)
             if open_:
                 gp.set_stick(wheel.select, state.source("wheel_x"), state.source("wheel_y"))
+        nudge = extras.aim_nudge
+        aiming = state.condition("aiming") and not state.condition("wheel_open")  # the wheel owns its stick
+        if nudge is not None and self._in_modes(nudge.modes) and aiming:
+            gp.set_stick(nudge.stick, state.source("aim_x"), state.source("aim_y"))
         flight = extras.flight
         if flight is not None and self._in_modes(flight.modes) and state.condition("flying"):
             # Rule 4's one exception: the body flies (the port binding keeps the stick neutral).

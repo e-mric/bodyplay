@@ -279,6 +279,9 @@ def render(
         pts = pose.img.copy()
         pts[:, :2] *= k
         T.neon_skeleton(img, pts, EDGES, JOINTS)
+    st = panel.state
+    if st is not None and getattr(st, "aim_anchor_px", None) is not None and st.aim_hand_px is not None:
+        _pointer(img, st, k)
     img = cv2.flip(img, 1)  # mirror, so your left is on the left
     h, w = img.shape[:2]
     vx, vy = x0 + inset + (aw - w) // 2, y0 + inset + (ah - h) // 2
@@ -298,6 +301,23 @@ def render(
     _panel(c, panel)
     _meters(c, hud)
     return c.bgr()
+
+
+def _pointer(img, st, k: float) -> None:
+    """Aim pointer: a ring where the aiming hand started, a crosshair where it is now, and
+    the line between; pink while the hand steers the aim (past the deadzone)."""
+    import cv2
+
+    ax, ay = (round(v * k) for v in st.aim_anchor_px)
+    hx, hy = (round(v * k) for v in st.aim_hand_px)
+    steering = abs(st.aim_x) > 0 or abs(st.aim_y) > 0
+    col = T.PINK[::-1] if steering else T.CYAN[::-1]  # BGR
+    cv2.circle(img, (ax, ay), 20, col, 2, cv2.LINE_AA)
+    if steering:
+        cv2.line(img, (ax, ay), (hx, hy), col, 2, cv2.LINE_AA)
+    for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+        cv2.line(img, (hx + 6 * dx, hy + 6 * dy), (hx + 18 * dx, hy + 18 * dy), col, 3, cv2.LINE_AA)
+    cv2.circle(img, (hx, hy), 2, col, -1, cv2.LINE_AA)
 
 
 def _subtitle(c: T.Canvas, sub: str, xy: tuple[int, int], max_width: int) -> None:

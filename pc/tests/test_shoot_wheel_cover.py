@@ -215,3 +215,60 @@ def test_drill_scores_flight():
     assert sc.events["fly_start"].hits == 1 and sc.events["fly_end"].hits == 1
     assert sc.fly["roll_left"] > 0.9
     assert "flight: roll left" in wt.format_scores(sc)
+
+
+def nudge_states(tl: Timeline):
+    g = WebcamGestures(load_profile(GTA5).gestures)
+    out = []
+    for p in tl.poses():
+        g.update(p)
+        out.append((g.state.aiming, g.state.aim_x, g.state.aim_y, g.state.aim_anchor_px))
+    return out
+
+
+def test_moving_the_aiming_hand_steers_the_aim():
+    tl = Timeline(6.0)
+    tl.aim(1.0, 5.0)
+    i0, i1 = tl.idx(2.5), tl.idx(3.0)
+    for k, i in enumerate(range(i0, tl.idx(5.0))):  # hand drifts to your right (image left), slowly
+        a = min(1.0, (k + 1) / (i1 - i0))
+        tl.img[i, W.R_WRIST, 0] -= a * 0.3 * TORSO_PX
+    states = nudge_states(tl)
+    aiming, x, y, anchor = states[tl.idx(2.0)]
+    assert aiming and (x, y) == (0.0, 0.0) and anchor is not None  # holding still: no steering
+    aiming, x, y, _ = states[tl.idx(4.0)]
+    assert aiming and x > 0.5 and abs(y) < 0.1  # steering right
+    assert states[tl.idx(5.8)][1:3] == (0.0, 0.0)  # arm down: aim released, stick centred
+
+
+def test_recoil_flick_does_not_steer():
+    tl = Timeline(6.0)
+    tl.aim(1.0, 4.5)
+    recoil(tl, 2.5)
+    states = nudge_states(tl)
+    window = states[tl.idx(2.4) : tl.idx(3.0)]
+    assert all(abs(y) < 0.05 and abs(x) < 0.05 for _, x, y, _ in window)
+
+
+def test_nudge_drives_the_right_stick_only_while_aiming():
+    app, backend, clock = tier0_with_backend()
+    tl = Timeline(6.0)
+    tl.aim(1.0, 5.0)
+    for i in range(tl.idx(2.5), tl.idx(5.0)):
+        tl.img[i, W.R_WRIST, 1] -= 0.3 * TORSO_PX * min(1.0, (i - tl.idx(2.5) + 1) / 15)  # hand up
+    reports = drive(app, clock, tl)
+    assert reports[tl.t_us(tl.idx(4.0))].right[1] > 0.5  # aim up
+    assert reports[tl.t_us(tl.idx(0.5))].right == (0.0, 0.0)
+
+
+def test_pointing_at_the_wheel_is_not_aiming_with_the_left_hand():
+    gestures = load_profile(GTA5).gestures
+    left = gestures.model_copy(update={"webcam": gestures.webcam.model_copy(update={"aim_hand": "left"})})
+    tl = wheel_timeline()  # left hand points level to your left while the wheel is open
+    g = WebcamGestures(left)
+    names, xs = [], []
+    for p in tl.poses(with_world=False):
+        names += [e.name for e in g.update(p)]
+        xs.append(g.state.wheel_x)
+    assert "aim_start" not in names and "wheel_open" in names
+    assert xs[tl.idx(2.5)] == pytest.approx(-1, abs=0.05)

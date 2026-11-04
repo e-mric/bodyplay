@@ -105,6 +105,7 @@ tier0:
   weapon_wheel: {hold: l1, select: right_stick}
   cover: {tap: r1}
   flight: {stick: left_stick}
+  aim_nudge: {stick: right_stick}   # while aiming, move the aiming hand to steer the crosshair
   workout: {tap: cross}
 
 # Left to the DualSense: R1 cover / handbrake, L3 stealth / horn, L1 weapon wheel,

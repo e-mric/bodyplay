@@ -112,6 +112,14 @@ def cmd_webcam(args: argparse.Namespace) -> int:
     )
 
 
+def cmd_screen_record(args: argparse.Namespace) -> int:
+    from bodyctl.tools.screen_record import record
+
+    region = tuple(int(v) for v in args.region.split(",")) if args.region else None
+    record(args.out, args.title, region, args.seconds, args.fps, args.width, args.stop_file)
+    return 0
+
+
 def _start_passthrough(gamepad, slot: int, enabled: bool) -> None:
     """Merge your real controller into the virtual pad, and say where each one sits."""
     from bodyctl.output.passthrough import Passthrough
@@ -586,6 +594,19 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sp.add_argument("--window", metavar="X,Y,W,H", help="drill window position and size")
     sp.add_argument("--on-top", action="store_true", help="keep the drill window above the game")
+
+    sp = add(
+        "screen-record",
+        "record a game window with per-frame capture times (lines up with drills)",
+        cmd_screen_record,
+    )
+    sp.add_argument("--out", default="data/screen/game", help="output path (.mp4 + .t_us.npy)")
+    sp.add_argument("--title", default="Grand Theft Auto V", help="window title to find (Windows)")
+    sp.add_argument("--region", metavar="L,T,R,B", help="screen region instead of a window")
+    sp.add_argument("--seconds", type=float, default=300.0, help="stop after this long")
+    sp.add_argument("--fps", type=float, default=20.0)
+    sp.add_argument("--width", type=int, default=1280, help="video width (height keeps the shape)")
+    sp.add_argument("--stop-file", help="stop as soon as this file exists")
 
     sp = add("webcam-tune", "Tier 0: tune gesture thresholds on drill recordings", cmd_webcam_tune)
     sp.add_argument("recordings", nargs="*", help="drill .npz files (default: all in data/drills)")

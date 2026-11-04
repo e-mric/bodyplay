@@ -107,6 +107,47 @@ class WebcamParams(_Strict):
     aim_release_ms: int = Field(
         200, ge=0, description="Aiming survives leaving the pose this long (e.g. a recoil flick)"
     )
+    step_signal: Literal["alternate", "knee_lift"] = Field(
+        "alternate", description="Steps from the feet and knees alternating (alternate) or each knee's lift"
+    )
+    step_alt: float = Field(
+        0.06,
+        gt=0,
+        description="Alternate: one foot+knee this much higher than the other (torso lengths) = a step",
+    )
+    step_other_max: float = Field(
+        0.5,
+        ge=0,
+        description="A step counts while the other knee is below this share of knee_lift (both up = a dip)",
+    )
+    punch_still_legs_ms: int = Field(
+        700, ge=0, description="No punches until the knees have been still this long (running arms swing)"
+    )
+    hurdle_lift: float = Field(
+        0.65, gt=0, description="Hurdle jump: one knee raised this far (torso lengths) above standing = jump"
+    )
+    hurdle_other_max: float = Field(
+        0.45, gt=0, description="Hurdle jump: ... while the other knee stays below this (both high = crouch)"
+    )
+    aim_hand: Literal["either", "right", "left"] = Field(
+        "either", description="Arm that aims, steers and shoots: either (right first), right or left"
+    )
+    aim_nudge_deadzone: float = Field(
+        0.06,
+        ge=0,
+        description="Aim nudge: hand moved less than this (torso lengths) from where aiming began = still",
+    )
+    aim_nudge_full: float = Field(0.3, gt=0, description="Aim nudge: hand this far away = full right stick")
+    aim_nudge_x_gain: float = Field(
+        1.5,
+        gt=0,
+        description="Aim nudge: left/right boost (a side camera sees sideways hand moves shortened)",
+    )
+    aim_nudge_max_speed: float = Field(
+        2.0,
+        gt=0,
+        description="Aim nudge: hand moving faster than this (torso lengths/s) doesn't steer (recoil)",
+    )
     shoot_flick_speed: float = Field(
         1.5, gt=0, description="While aiming: upward wrist speed vs the shoulder (torso/s) that shoots"
     )
@@ -118,6 +159,9 @@ class WebcamParams(_Strict):
         0.25, gt=0, description="Weapon wheel: right wrist this far above the right shoulder opens it"
     )
     wheel_side: float = Field(0.6, gt=0, description="... and within this distance of it sideways")
+    wheel_elbow_up: float = Field(
+        0.0, description="... with the right elbow at least this far above the shoulder (backpack reach)"
+    )
     wheel_hold_ms: int = Field(150, ge=0, description="Reach held this long before the wheel opens")
     wheel_release_ms: int = Field(150, ge=0, description="Hand away this long before the wheel closes")
     wheel_point_min: float = Field(
@@ -352,6 +396,14 @@ class Cover(_Strict):
         return v
 
 
+class AimNudge(_Strict):
+    """While aiming, the aiming hand steers the aim (right stick): move it from where you
+    started aiming and the crosshair drifts that way."""
+
+    stick: Literal["left_stick", "right_stick"] = Field("right_stick", description="Stick the hand drives")
+    modes: list[str] = Field(default_factory=lambda: ["on_foot"], description="Game modes it works in")
+
+
 class Flight(_Strict):
     """Arms spread like wings fly the aircraft: the one exception to rule 4's neutral
     body sticks in vehicles, approved for the Tier 0 virtual pad only."""
@@ -385,6 +437,7 @@ class Tier0Extras(_Strict):
     weapon_wheel: WeaponWheel | None = None
     cover: Cover | None = None
     flight: Flight | None = None
+    aim_nudge: AimNudge | None = None
     workout: Workout | None = None
 
 

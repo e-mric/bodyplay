@@ -92,21 +92,21 @@ def test_detection_outside_any_cue_is_false():
 def small_steps_recording() -> Recording:
     tl = Timeline(12.0)
     t, k = 2.0, 0
-    while t < 6.0:  # knees lift less than the default knee_lift (0.12 torso)
-        tl.knee_lift(t, 0.24, W.L_KNEE if k % 2 == 0 else W.R_KNEE, lift_torso=0.09)
+    while t < 6.0:  # legs alternate less than the default step_alt (0.06 torso)
+        tl.knee_lift(t, 0.24, W.L_KNEE if k % 2 == 0 else W.R_KNEE, lift_torso=0.04)
         t += 0.4
         k += 1
     return recording(tl, [("still", 0, 2.0), ("run", 2.0, 6.0), ("stop", 6.0, 12.0)])
 
 
-def test_search_lowers_knee_lift_for_small_steps():
+def test_search_lowers_step_alt_for_small_steps():
     rec = small_steps_recording()
     g = gestures()
     assert wt.score(rec, g).events["run_start"].hits == 0
     best, results = wt.search([rec], g, progress=lambda s: None)
     groups = [r.group for r in results]
     assert groups == ["smooth", "run", "smooth (pass 2)", "run (pass 2)"]  # smoothing, then cued moves only
-    assert best.webcam.knee_lift < 0.09
+    assert best.webcam.step_alt < 0.04
     sc = wt.score(rec, best)
     assert sc.events["run_start"].hits == 1 and sc.events["run_stop"].hits == 1
     assert sc.steps_per_s and sc.steps_per_s > 2
@@ -158,13 +158,13 @@ def test_measure_view_and_checks():
 
 
 def test_set_params_and_write_profile(tmp_path):
-    g = wt.set_params(gestures(), {"webcam.knee_lift": 0.08, "jump.crouch_hold_ms": 450})
-    assert g.webcam.knee_lift == 0.08 and g.jump.crouch_hold_ms == 450
+    g = wt.set_params(gestures(), {"webcam.step_alt": 0.08, "jump.crouch_hold_ms": 450})
+    assert g.webcam.step_alt == 0.08 and g.jump.crouch_hold_ms == 450
     with pytest.raises(KeyError):
         wt.set_params(g, {"webcam.nope": 1})
     out = wt.write_profile(wt.BASE_PROFILE, g, tmp_path / "tuned.yaml", [])
     prof = load_profile(out)
-    assert prof.gestures.webcam.knee_lift == 0.08
+    assert prof.gestures.webcam.step_alt == 0.08
     assert prof.gestures.jump.crouch_hold_ms == 450
     assert prof.gestures.lean == gestures().lean
     assert prof.ports == load_profile(GTA5).ports
@@ -176,7 +176,7 @@ def test_cli_tune(tmp_path, capsys):
     assert "run_start" in capsys.readouterr().out
     out = tmp_path / "tuned.yaml"
     assert main(["webcam-tune", str(path), "--profile", GTA5, "--pose", "mediapipe", "-o", str(out)]) == 0
-    assert load_profile(out).gestures.webcam.knee_lift < 0.09
+    assert load_profile(out).gestures.webcam.step_alt < 0.04
     assert "front" in capsys.readouterr().out
 
 

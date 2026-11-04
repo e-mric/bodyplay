@@ -43,7 +43,7 @@ GROUPS: dict[str, tuple[tuple[str, ...] | None, dict[str, list[float]]]] = {
             "webcam.smooth_beta": [0.0, 0.1, 0.3, 1.0],
         },
     ),
-    "run": (("run_start", "run_stop"), {"webcam.knee_lift": [0.05, 0.07, 0.09, 0.12, 0.15, 0.18, 0.22]}),
+    "run": (("run_start", "run_stop"), {"webcam.step_alt": [0.03, 0.045, 0.06, 0.08, 0.1, 0.13, 0.17]}),
     "jump": (
         ("jump", "crouch", "stand"),
         {
@@ -52,11 +52,16 @@ GROUPS: dict[str, tuple[tuple[str, ...] | None, dict[str, list[float]]]] = {
             "jump.crouch_hold_ms": [300, 450, 600],
         },
     ),
+    "hurdle": (
+        ("jump",),
+        {"webcam.hurdle_lift": [0.5, 0.6, 0.7, 0.8], "webcam.hurdle_other_max": [0.35, 0.45, 0.55]},
+    ),
     "punch": (
         ("punch", "aim_start", "aim_end"),
         {
             "webcam.punch_speed": [2.0, 2.5, 3.0, 4.0, 5.0, 6.0],
             "webcam.punch_elbow_deg": [100, 120, 140, 155],
+            "webcam.punch_still_legs_ms": [300, 700, 1200],
         },
     ),
     "aim": (
@@ -94,7 +99,11 @@ GROUPS: dict[str, tuple[tuple[str, ...] | None, dict[str, list[float]]]] = {
     ),
     "wheel": (
         ("wheel_open", "wheel_close"),
-        {"webcam.wheel_reach": [0.1, 0.2, 0.3, 0.45], "webcam.wheel_hold_ms": [80, 150, 250]},
+        {
+            "webcam.wheel_reach": [0.1, 0.2, 0.3, 0.45],
+            "webcam.wheel_elbow_up": [-0.1, 0.0, 0.1, 0.2],
+            "webcam.wheel_hold_ms": [80, 150, 250],
+        },
     ),
 }
 LEAN_SETTLE_US = 700_000  # ignore the first 0.7 s of a lean or a return to the middle

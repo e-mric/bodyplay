@@ -52,11 +52,19 @@ Keep the keyboard/mouse or your usual controller available for menus and actions
 that Bodyplay doesn't cover yet.
 
 Start on foot and check one action at a time: run, stop, lean, jump, punch, aim.
+Running counts a step each time one foot (and knee) is clearly higher than the other,
+so small in-place steps count and faster steps run faster; a jump also fires on a
+hurdle-style lead knee (one knee far higher than a running step).
 Then the Tier 0 extras (profile `tier0`, virtual pad only):
 
 - **Aim:** point either arm straight at the screen and hold it (a fist held up in guard
   doesn't aim; running in place never punches).
 - **Shoot:** while aiming, flick the aiming hand up like recoil (fires RT / R2).
+- **Steer the aim:** while aiming, move the aiming hand slowly away from where you started
+  aiming and the crosshair drifts that way (right stick); bring it back to stop. The window
+  shows a ring where you started and a crosshair on your hand (pink while steering). Fast
+  moves don't steer, so the recoil flick doesn't throw the aim. For precise shots, also set
+  GTA's Targeting Mode to Assisted Aim (story mode).
 - **Weapon wheel:** reach over your right shoulder and keep the hand there (holds LB /
   L1), point your left hand at a slot (right stick; a hanging arm selects nothing),
   drop the right hand to equip.

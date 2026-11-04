@@ -72,6 +72,10 @@ class BodyState:
     flying: bool = False  # arms spread like wings
     fly_roll: float = 0.0  # -1 (left wing down) .. 1 (right wing down)
     fly_pitch: float = 0.0  # -1 (hands up: nose up, stick back) .. 1 (hands down: nose down)
+    aim_x: float = 0.0  # aim nudge, -1..1 (your right +): the aiming hand moved from where aiming began
+    aim_y: float = 0.0  # -1..1 (up +)
+    aim_anchor_px: tuple[float, float] | None = None  # pointer: where the hand started aiming (image px)
+    aim_hand_px: tuple[float, float] | None = None  # and where it is now
     workout: str = ""  # "pushup" (in a plank) or "pullup" (hanging from a bar); "" = standing
     workout_reps: int = 0  # reps in the current set
 
@@ -88,6 +92,8 @@ class BodyState:
             "wheel_y": self.wheel_y,
             "fly_roll": self.fly_roll,
             "fly_pitch": self.fly_pitch,
+            "aim_x": self.aim_x,
+            "aim_y": self.aim_y,
         }.get(name, 0.0)
 
     def condition(self, name: str) -> bool:
@@ -150,6 +156,7 @@ class _Leg:
     knee: int
     baseline: float | None = None
     lifted: bool = False
+    peak: float = 0.0  # highest lift since this knee came up
 
 
 @dataclass
@@ -180,10 +187,17 @@ class WebcamGestures:
         self._dip_start_us: int | None = None
         self._crouch_sent = False
         self._last_jump_us = -(10**12)
+        self._hurdle_up = [False, False]  # each knee: already counted as a hurdle this lift
+        self._legs_moving_us = -(10**12)  # last time a knee was off its standing level
+        self._alt_base: float | None = None  # left-minus-right foot+knee height while standing
+        self._alt_side = 0  # which side is up: 1 left, -1 right, 0 level
         self._aim_since_us: int | None = None
         self._aim_lost_us: int | None = None
         self._flick: tuple[int, float] | None = None  # (t_us, wrist height above shoulder)
-        self._aim_arm = 1  # index in _arms of the arm that aims (or last aimed): right first
+        self._aim_arm = 0 if self.params.webcam.aim_hand == "left" else 1  # index in _arms
+        self._nudge_anchor: np.ndarray | None = None  # wrist - shoulder when aiming began, torso lengths
+        self._nudge_last: tuple[int, np.ndarray] | None = None  # (t_us, wrist - shoulder) last frame
+        self._nudge_fast = False  # the aiming hand moved fast last frame (flick, dropping the arm)
         self._last_shot_us = -(10**12)
         self._wheel_since_us: int | None = None
         self._wheel_lost_us: int | None = None
@@ -273,6 +287,7 @@ class WebcamGestures:
         self._punch(pose, torso, events)
         self._aim(pose, torso, events)
         self._shoot(pose, torso, events)
+        self._aim_nudge(pose, torso)
         return events
 
     def _release(self, t_us: int | None, events: list[GestureEvent]) -> None:
@@ -290,6 +305,7 @@ class WebcamGestures:
             self._land(t, events)
         self._aim_since_us = self._aim_lost_us = self._flick = self._wheel_since_us = None
         self._fly_since_us = None
+        self._end_nudge()
         self._hip_hist = []
         self._dip_start_us = None
         for arm in self._arms:
@@ -439,18 +455,74 @@ class WebcamGestures:
                 continue
             s = leg.baseline - lift
             other = lifts[1 - li]
+            if lift > p.webcam.knee_lift / 2:
+                self._legs_moving_us = t  # a knee is coming up: running arms swing, they don't punch
             # A step lifts one knee off a straight standing leg; both knees "rising" toward
             # the hips together is the knees bending (a dip, a crouch, kneeling down).
-            standing_leg = other is None or other < p.webcam.knee_lift / 2
+            standing_leg = other is None or other < p.webcam.knee_lift * p.webcam.step_other_max
+            self._hurdle(li, lift, other, t, conf, events)
             if not leg.lifted and lift > p.webcam.knee_lift and standing_leg:
-                leg.lifted = True
-                self._step(li, t, conf, events)
-            elif leg.lifted and lift < p.webcam.knee_lift / 2:
-                leg.lifted = False
+                leg.lifted, leg.peak = True, lift
+                if p.webcam.step_signal == "knee_lift":
+                    self._step(li, t, conf, events)
+            elif leg.lifted:
+                leg.peak = max(leg.peak, lift)
+                # Down again once it has dropped to half its peak: fast steps never come all
+                # the way back to standing before the next one.
+                if lift < max(p.webcam.knee_lift / 2, leg.peak / 2):
+                    leg.lifted = False
             if not leg.lifted and lift < p.webcam.knee_lift / 2:
                 # Standing level drifts slowly (posture, camera); only learn it while down.
                 leg.baseline += 0.02 * (s - leg.baseline)
+        if p.webcam.step_signal == "alternate":
+            self._alternate(pose, torso, t, conf, events)
         self._check_stop(t, events)
+
+    def _alternate(
+        self, pose: Pose, torso: float, t_us: int, conf: float, events: list[GestureEvent]
+    ) -> None:
+        """Steps from the legs alternating: how much higher your left foot and knee are than
+        your right ones. Running in place flips its sign every step even when the knees
+        barely rise; it cancels the body's bounce, the camera height and distance; and both
+        feet moving together (a jump, a crouch) leave it at zero."""
+        wp = self.params.webcam
+        img = pose.img
+        s = 0.0
+        for left, right in ((L_KNEE, R_KNEE), (L_ANKLE, R_ANKLE)):
+            if self._visible(pose, left, right):
+                s += (img[right, 1] - img[left, 1]) / torso  # image y grows down: + = left higher
+        if self._alt_base is None:
+            self._alt_base = s
+        d = s - self._alt_base
+        thr = wp.step_alt
+        if d > thr and self._alt_side != 1:
+            self._alt_side = 1
+            self._step(0, t_us, conf, events)
+        elif d < -thr and self._alt_side != -1:
+            self._alt_side = -1
+            self._step(1, t_us, conf, events)
+        elif abs(d) < thr / 3:
+            self._alt_side = 0  # both feet level: the same foot may step again
+        if abs(d) < thr / 2:
+            self._alt_base += 0.02 * (s - self._alt_base)  # standing offset (camera angle) drifts
+
+    def _hurdle(
+        self, li: int, lift: float, other: float | None, t_us: int, conf: float, events: list[GestureEvent]
+    ) -> None:
+        """Hurdle jump (GTA's running jump, like a 110 m hurdle): the lead knee comes up far
+        higher than a running step while the other leg stays low (both knees high is a
+        crouch). Fires as the knee crosses `hurdle_lift`, once per lift."""
+        wp = self.params.webcam
+        up = self._hurdle_up[li]
+        if lift < wp.hurdle_lift / 2:
+            self._hurdle_up[li] = False
+            return
+        if up or lift < wp.hurdle_lift or (other is not None and other > wp.hurdle_other_max):
+            return
+        self._hurdle_up[li] = True
+        if (t_us - self._last_jump_us) / 1000 > wp.jump_refractory_ms and not self.state.crouching:
+            events.append(GestureEvent("jump", t_us, conf))
+            self._last_jump_us = t_us
 
     def _step(self, leg: int, t_us: int, conf: float, events: list[GestureEvent]) -> None:
         p = self.params
@@ -598,6 +670,7 @@ class WebcamGestures:
             or self._wheel_since_us is not None
             or self._fly_since_us is not None
             or self.state.running
+            or (pose.t_us - self._legs_moving_us) / 1000 < wp.punch_still_legs_ms
         )
         for arm in self._arms:
             if not self._visible(pose, arm.shoulder, arm.elbow, arm.wrist):
@@ -625,10 +698,16 @@ class WebcamGestures:
             arm.last_reach = reach
             arm.last_t_us = pose.t_us
 
-    def _aim_pose(self, pose: Pose, arm: _Arm, torso_px: float) -> bool:
+    def _aim_pose(self, pose: Pose, arm: _Arm, torso_px: float, keep: bool = False) -> bool:
+        """keep: already aiming; then a hand steering slowly within the aim nudge's range of
+        where aiming began still aims, wherever that takes it."""
         wp = self.params.webcam
         if not self._visible(pose, arm.shoulder, arm.elbow, arm.wrist):
             return False
+        if keep and self._nudge_anchor is not None and not self._nudge_fast:
+            rel = (pose.img[arm.wrist, :2] - pose.img[arm.shoulder, :2]) / torso_px
+            if np.linalg.norm(rel - self._nudge_anchor) <= wp.aim_nudge_full:
+                return True
         (s, e, w), _ = self._arm_points(pose, arm, torso_px)
         if pose.world is not None:
             forward = s[2] - w[2]  # wrist closer to the camera than the shoulder
@@ -642,12 +721,18 @@ class WebcamGestures:
         )
 
     def _aim(self, pose: Pose, torso_px: float, events: list[GestureEvent]) -> None:
-        """Either arm aims, the right one first; while aiming, only that arm counts."""
+        """The profile's aim_hand aims (either: the right one first); while aiming, only that
+        arm counts."""
         wp = self.params.webcam
-        if self.state.aiming:
-            aim_pose = self._aim_pose(pose, self._arms[self._aim_arm], torso_px)
+        order = {"either": (1, 0), "right": (1,), "left": (0,)}[wp.aim_hand]
+        if self.state.wheel_open or self._wheel_since_us is not None:
+            order = ()  # the left hand is picking a wheel slot, not aiming
+        if not order:
+            aim_pose = False
+        elif self.state.aiming:
+            aim_pose = self._aim_pose(pose, self._arms[self._aim_arm], torso_px, keep=True)
         else:
-            k = next((k for k in (1, 0) if self._aim_pose(pose, self._arms[k], torso_px)), None)
+            k = next((k for k in order if self._aim_pose(pose, self._arms[k], torso_px)), None)
             aim_pose = k is not None
             if k is not None and k != self._aim_arm:
                 self._aim_arm, self._aim_since_us = k, None
@@ -694,14 +779,63 @@ class WebcamGestures:
         if self._flick is not None and t > self._flick[0]:
             speed = (up - self._flick[1]) / ((t - self._flick[0]) / 1e6)
             conf = float(pose.img[[arm.shoulder, arm.elbow, arm.wrist], 2].min())
+            # A recoil flick starts from the aiming position (rule 7: no shots from an arm
+            # that wandered off, e.g. into a jump or the weapon wheel).
+            near = (
+                self._nudge_anchor is None
+                or self._nudge_last is None
+                or np.linalg.norm(self._nudge_last[1] - self._nudge_anchor) <= wp.aim_nudge_full
+            )
             if (
                 speed > wp.shoot_flick_speed
                 and conf >= wp.shoot_min_conf
+                and near
                 and (t - self._last_shot_us) / 1000 > wp.shoot_refractory_ms
             ):
                 events.append(GestureEvent("shoot", t, conf))
                 self._last_shot_us = t
         self._flick = (t, up)
+
+    # -- aim nudge -------------------------------------------------------------------
+
+    def _aim_nudge(self, pose: Pose, torso_px: float) -> None:
+        """While aiming, the aiming hand steers the aim: where it is relative to where it
+        was when aiming began (both relative to the shoulder, so body sway cancels) pushes
+        the right stick, past a deadzone and up to full at `aim_nudge_full`. Fast moves
+        (the recoil flick) don't steer, and the aim holds still just after a shot."""
+        wp = self.params.webcam
+        arm = self._arms[self._aim_arm]
+        if not self.state.aiming or not self._visible(pose, arm.shoulder, arm.wrist):
+            self._end_nudge()
+            return
+        t = pose.t_us
+        rel = (pose.img[arm.wrist, :2] - pose.img[arm.shoulder, :2]) / torso_px
+        if self._nudge_anchor is None:
+            self._nudge_anchor = rel.copy()
+        fast = False
+        if self._nudge_last is not None and t > self._nudge_last[0]:
+            speed = float(np.linalg.norm(rel - self._nudge_last[1])) / ((t - self._nudge_last[0]) / 1e6)
+            fast = speed > wp.aim_nudge_max_speed
+        self._nudge_last, self._nudge_fast = (t, rel), fast
+        quiet = fast or (t - self._last_shot_us) / 1000 < wp.shoot_refractory_ms
+        d = rel - self._nudge_anchor
+        # The camera faces you: your right is image left (x flips); image y is down.
+        dx, dy = -float(d[0]) * wp.aim_nudge_x_gain, -float(d[1])
+        mag = math.hypot(dx, dy)
+        x = y = 0.0
+        if not quiet and mag > wp.aim_nudge_deadzone:
+            k = min(1.0, (mag - wp.aim_nudge_deadzone) / (wp.aim_nudge_full - wp.aim_nudge_deadzone)) / mag
+            x, y = dx * k, dy * k
+        self.state.aim_x, self.state.aim_y = x, y
+        sh = pose.img[arm.shoulder, :2]
+        self.state.aim_anchor_px = tuple(sh + self._nudge_anchor * torso_px)
+        self.state.aim_hand_px = tuple(pose.img[arm.wrist, :2])
+
+    def _end_nudge(self) -> None:
+        self._nudge_anchor = self._nudge_last = None
+        self._nudge_fast = False
+        self.state.aim_x = self.state.aim_y = 0.0
+        self.state.aim_anchor_px = self.state.aim_hand_px = None
 
     # -- weapon wheel ------------------------------------------------------------
 
@@ -713,9 +847,18 @@ class WebcamGestures:
         xy = pose.img[:, :2] / torso_px
         t = pose.t_us
         reach = False
-        if self._visible(pose, R_SHOULDER, R_WRIST):
+        if (
+            self._visible(pose, R_SHOULDER, R_ELBOW, R_WRIST) and not self.state.aiming
+        ):  # an aim isn't a reach
             above = xy[R_SHOULDER, 1] - xy[R_WRIST, 1]
-            reach = above > wp.wheel_reach and abs(xy[R_WRIST, 0] - xy[R_SHOULDER, 0]) < wp.wheel_side
+            # Into the backpack: hand up over the shoulder with the elbow raised too (a
+            # guarding fist keeps its elbow down, an aiming arm at shoulder height).
+            elbow_up = xy[R_SHOULDER, 1] - xy[R_ELBOW, 1]
+            reach = (
+                above > wp.wheel_reach
+                and elbow_up > wp.wheel_elbow_up
+                and abs(xy[R_WRIST, 0] - xy[R_SHOULDER, 0]) < wp.wheel_side
+            )
             if not self.state.wheel_open and self._visible(pose, L_SHOULDER, L_WRIST):
                 # Both hands going up reach for a bar, not the backpack (pointing up comes
                 # after the wheel is open).

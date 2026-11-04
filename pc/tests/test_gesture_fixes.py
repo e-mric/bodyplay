@@ -93,3 +93,59 @@ def test_losing_the_body_lets_go_of_the_lean():
     assert g.state.lean_stick > 0.5
     g.update(None)  # camera loses you
     assert g.state.lean_stick == 0.0 and g.state.lean_deg == 0.0
+
+
+def test_2d_aim_survives_the_hand_steering_up():
+    sx, sy = _IMG[W.R_SHOULDER]
+    tl = Timeline(5.0)
+    for i in range(tl.idx(0.5), tl.n):
+        up = 0.3 * TORSO_PX * min(1.0, max(0.0, (i - tl.idx(2.5)) / 15))  # raise the aim over 0.5 s
+        tl.img[i, W.R_ELBOW, :2] = (sx - 0.15 * TORSO_PX, sy - up / 2)
+        tl.img[i, W.R_WRIST, :2] = (sx - 0.3 * TORSO_PX, sy - 0.02 * TORSO_PX - up)
+    g = WebcamGestures(load_profile(GTA5).gestures)
+    states = []
+    for p in tl.poses(with_world=False):
+        g.update(p)
+        states.append((g.state.aiming, g.state.aim_y))
+    assert states[tl.idx(2.0)] == (True, 0.0)
+    aiming, y = states[tl.idx(4.0)]
+    assert aiming and y > 0.5
+
+
+def test_aim_hand_left_ignores_the_right_arm():
+    gestures = load_profile(GTA5).gestures
+    left = gestures.model_copy(update={"webcam": gestures.webcam.model_copy(update={"aim_hand": "left"})})
+    tl = Timeline(4.0)
+    tl.aim(1.0, 3.5)  # right arm aims
+    g = WebcamGestures(left)
+    names = [e.name for p in tl.poses() for e in g.update(p)]
+    assert "aim_start" not in names
+    tl2 = Timeline(4.0)
+    elbow, wrist = np.array((0.19, -0.48, -0.25)), np.array((0.19, -0.48, -0.5))
+    for i in range(tl2.idx(1.0), tl2.idx(3.5)):
+        set_left_arm(tl2, i, elbow, wrist)
+    g = WebcamGestures(left)
+    assert "aim_start" in [e.name for p in tl2.poses() for e in g.update(p)]
+
+
+def test_hurdle_jump_lead_knee_high_fires_a_jump():
+    tl = Timeline(4.0)
+    tl.knee_lift(1.0, 0.5, W.L_KNEE, lift_torso=0.85)  # lead knee way up, the other leg straight
+    tl.knee_lift(1.3, 0.5, W.R_KNEE, lift_torso=0.6)  # trail leg follows
+    jumps = [t for n, t in names(tl) if n == "jump"]
+    assert len(jumps) == 1 and 1.0 < jumps[0] < 1.3  # on the lead knee, once
+
+
+def test_running_knees_are_not_hurdles():
+    tl = Timeline(5.0)
+    tl.run(1.0, 4.0, 2.5)  # knee lifts of 0.35 torso
+    assert "jump" not in [n for n, _ in names(tl)]
+
+
+def test_first_strides_of_a_run_dont_punch():
+    tl = Timeline(6.0)
+    tl.knee_lift(1.0, 0.3, W.L_KNEE)  # first stride, before running is established
+    tl.punch(1.2)
+    tl.punch(4.0)  # legs still for seconds
+    punches = [t for n, t in names(tl) if n == "punch"]
+    assert len(punches) == 1 and abs(punches[0] - 4.0) < 0.2

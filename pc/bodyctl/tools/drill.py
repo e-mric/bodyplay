@@ -225,6 +225,16 @@ class Recording:
     img: np.ndarray  # (N, 33, 3) pixel x, y, visibility; NaN = no person
     world: np.ndarray  # (N, 33, 3) metres; NaN = unavailable
     cues: list[Cue]
+    pad: np.ndarray | None = None  # (N, 7) controller sent: buttons bitmask, lx, ly, rx, ry, l2, r2
+
+    def pad_buttons(self, i: int) -> set[str]:
+        """Buttons pressed at frame i (PS5 names), from the pad bitmask."""
+        from bodyctl.output.gamepad import BUTTONS
+
+        if self.pad is None:
+            return set()
+        bits = int(self.pad[i, 0])
+        return {name for k, name in enumerate(BUTTONS) if bits >> k & 1}
 
     def poses(self) -> list[Pose | None]:
         out: list[Pose | None] = []
@@ -246,6 +256,7 @@ class Recording:
             world=self.world,
             header=np.array(json.dumps(self.header)),
             cues=np.array(json.dumps([asdict(c) for c in self.cues])),
+            **({"pad": self.pad} if self.pad is not None else {}),
         )
         return path
 
@@ -258,6 +269,7 @@ class Recording:
                 img=z["img"],
                 world=z["world"],
                 cues=[Cue(**c) for c in json.loads(str(z["cues"]))],
+                pad=z["pad"] if "pad" in z.files else None,
             )
 
 
@@ -268,12 +280,19 @@ class RecordingBuilder:
         self._img: list[np.ndarray] = []
         self._world: list[np.ndarray] = []
         self.cues: list[Cue] = []
+        self._pad: list[list[float]] = []
         self._nan = np.full((NUM_LANDMARKS, 3), np.nan, np.float32)
 
     def __len__(self) -> int:
         return len(self._t)
 
-    def add(self, t_us: int, pose: Pose | None) -> None:
+    def add(self, t_us: int, pose: Pose | None, report=None) -> None:
+        """report: the gamepad Report sent this frame (kept as the recording's pad track)."""
+        if report is not None:
+            from bodyctl.output.gamepad import BUTTONS
+
+            bits = sum(1 << k for k, name in enumerate(BUTTONS) if name in report.buttons)
+            self._pad.append([bits, *report.left, *report.right, report.l2, report.r2])
         self._t.append(t_us)
         self._img.append(self._nan if pose is None else pose.img.astype(np.float32))
         world = None if pose is None else pose.world
@@ -294,6 +313,7 @@ class RecordingBuilder:
             np.stack(self._img) if self._img else np.zeros(shape, np.float32),
             np.stack(self._world) if self._world else np.zeros(shape, np.float32),
             self.cues,
+            np.array(self._pad, np.float32) if len(self._pad) == len(self._t) and self._pad else None,
         )
 
 
@@ -604,7 +624,6 @@ def run_drill(
                 if i and script[i - 1].label in EXPECT:
                     expected.add(EXPECT[script[i - 1].label][0])  # its window runs into this step
                 nxt = script[i + 1].text if i + 1 < len(script) else "done"
-            rec.add(t, pose)
             started = started or t
             hud.elapsed_s, hud.frames = (t - started) / 1e6, len(rec)
             if step.label in ("still", "gap", "center", "ready"):
@@ -620,6 +639,7 @@ def run_drill(
             if mode != engine.mode:
                 engine.set_mode(mode, t)
             engine.apply(gestures.state, events, t)
+            rec.add(t, pose, gamepad.report)
             missing = required_missing(missing_parts(pose))
             sub = f"next: {nxt}" + (f"   OUT OF VIEW: {', '.join(missing)}" if missing else "")
             style = "action" if step.is_action else "idle"
