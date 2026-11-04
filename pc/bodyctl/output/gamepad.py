@@ -11,6 +11,7 @@ Every press goes through a PressScheduler that enforces hard rule 8 (held
 from __future__ import annotations
 
 import sys
+import threading
 from dataclasses import dataclass, field, replace
 from typing import Protocol
 
@@ -124,6 +125,25 @@ class VGamepadBackend:
             "create": b.XUSB_GAMEPAD_BACK,
             "ps": b.XUSB_GAMEPAD_GUIDE,
         }
+        self.slot = self._user_index()  # XInput slot 0-3, None if unknown
+
+    def _user_index(self) -> int | None:
+        """The XInput slot Windows gave the virtual pad (not vgamepad's get_index, which is
+        ViGEm's own device number). It can take a moment to be assigned after plug-in."""
+        import ctypes
+        import time
+
+        from vgamepad.win import vigem_client as vcli
+
+        index = ctypes.c_ulong(0)
+        for _ in range(20):
+            err = vcli.vigem_target_x360_get_user_index(
+                self._pad._busp, self._pad._devicep, ctypes.byref(index)
+            )
+            if err == 0x20000000:  # VIGEM_ERROR_NONE
+                return int(index.value)
+            time.sleep(0.05)
+        return None
 
     def send(self, report: Report, now_us: int) -> None:
         pad = self._pad
@@ -167,51 +187,74 @@ class Gamepad:
         self._sched = {n: PressScheduler(hold_ms * 1000, release_ms * 1000) for n in BUTTONS + TRIGGERS}
         self._sticks = {s: (0.0, 0.0) for s in STICKS}
         self._analog = {t: 0.0 for t in TRIGGERS}
-        self.report = Report()
+        self.report = Report()  # what the backend last got: the body, plus the real controller
+        self.body = Report()  # the body's part alone (the marker and latency stats follow it)
+        self.physical = None  # passthrough.PhysicalPad: your real controller, merged on top
+        self.passthrough = None  # its polling thread, stopped on close
         self.changes = 0
+        # The passthrough thread updates the pad between camera frames.
+        self._lock = threading.RLock()
 
     def press(self, control: str, now_us: int) -> None:
-        self._sched[control].press(now_us)
+        with self._lock:
+            self._sched[control].press(now_us)
 
     def hold(self, control: str, on: bool, now_us: int) -> None:
-        self._sched[control].hold(on, now_us)
+        with self._lock:
+            self._sched[control].hold(on, now_us)
 
     def set_stick(self, stick: str, x: float, y: float) -> None:
-        self._sticks[stick] = (_clamp(x), _clamp(y))
+        with self._lock:
+            self._sticks[stick] = (_clamp(x), _clamp(y))
 
     def set_trigger(self, trigger: str, value: float) -> None:
-        self._analog[trigger] = _clamp(value, 0.0, 1.0)
+        with self._lock:
+            self._analog[trigger] = _clamp(value, 0.0, 1.0)
+
+    def set_physical(self, phys, now_us: int) -> None:
+        """Your real controller's state (passthrough), sent on top of the body's."""
+        with self._lock:
+            self.physical = phys
+            self.update(now_us)
 
     def release_all(self, now_us: int) -> None:
-        for s in self._sched.values():
-            s.clear(now_us)
-        for s in STICKS:
-            self._sticks[s] = (0.0, 0.0)
-        for t in TRIGGERS:
-            self._analog[t] = 0.0
+        with self._lock:
+            for s in self._sched.values():
+                s.clear(now_us)
+            for s in STICKS:
+                self._sticks[s] = (0.0, 0.0)
+            for t in TRIGGERS:
+                self._analog[t] = 0.0
 
     def update(self, now_us: int) -> Report:
-        for s in self._sched.values():
-            s.tick(now_us)
-        buttons = frozenset(n for n in BUTTONS if self._sched[n].level)
-        trig = {t: 1.0 if self._sched[t].level else self._analog[t] for t in TRIGGERS}
-        new = replace(
-            self.report,
-            buttons=buttons,
-            left=self._sticks["left_stick"],
-            right=self._sticks["right_stick"],
-            l2=trig["l2"],
-            r2=trig["r2"],
-        )
-        if new != self.report:
-            if _time_critical(self.report, new):
-                self.marker.pulse()
-            self.report = new
-            self.changes += 1
-            self.backend.send(new, now_us)
-        return new
+        from bodyctl.output.passthrough import merge
+
+        with self._lock:
+            for s in self._sched.values():
+                s.tick(now_us)
+            buttons = frozenset(n for n in BUTTONS if self._sched[n].level)
+            trig = {t: 1.0 if self._sched[t].level else self._analog[t] for t in TRIGGERS}
+            body = replace(
+                self.body,
+                buttons=buttons,
+                left=self._sticks["left_stick"],
+                right=self._sticks["right_stick"],
+                l2=trig["l2"],
+                r2=trig["r2"],
+            )
+            if body != self.body and _time_critical(self.body, body):
+                self.marker.pulse()  # the body's presses only: the latency rig measures those
+            self.body = body
+            new = merge(body, self.physical)
+            if new != self.report:
+                self.report = new
+                self.changes += 1
+                self.backend.send(new, now_us)
+            return new
 
     def close(self) -> None:
+        if self.passthrough is not None:
+            self.passthrough.stop()
         self.backend.close()
         self.marker.close()
 

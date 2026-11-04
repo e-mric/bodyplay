@@ -58,7 +58,7 @@ docs/                  plans
 
 - Firmware: `pio run -e node_belt`, `pio run -e node_belt_tether` (Tier 2, UART to the hub), `pio run -e node_wrist`, `pio run -e dongle`, `pio run -e hub`, `pio run -e marker`, `pio run -e <env> -t upload`, `pio test -e native`; host tools `pio run -e replay` and `pio run -e nodesim` (built automatically by `bodyctl`)
 - PC: `uv sync`, `uv run pytest`, `uv run ruff check .`, `uv run ruff format .` (the uv project is the root `pyproject.toml`; the package lives in `pc/bodyctl`)
-- Tier 0 tuning: `uv run bodyctl webcam-drill <move...> --reps 8 --angles front,right30 [--video]` (guided recording to `data/drills/`), `uv run bodyctl webcam-tune` (tunes smoothing then thresholds on the drills made with the current pose model, writes `data/profiles/gta5_tuned_<pose>.yaml`, git-ignored; the committed `gta5.yaml` is untouched)
+- Tier 0 tuning: `uv run bodyctl webcam-drill <move...> --reps 8 --angles front,right30 [--video] [--play]` (guided recording to `data/drills/`; `--play` also drives the game), `uv run bodyctl webcam-tune` (tunes smoothing then thresholds on the drills made with the current pose model, writes `data/profiles/gta5_tuned_<pose>.yaml`, git-ignored; the committed `gta5.yaml` is untouched)
 - Tier 0 pose model: `--pose auto|rtmpose|mediapipe` on `webcam`, `webcam-drill`, `webcam-tune`; auto = RTMPose-m (rtmlib, `rtmpose` dependency group) when ONNX Runtime has CUDA, else MediaPipe. CI uses `--no-group gamepad --no-group rtmpose`
 - Run: `uv run bodyctl webcam [--window X,Y,W,H --on-top --pad xbox|dualsense]` (Tier 0), `uv run bodyctl device push-profile --port COM5 config/profiles/gta5.yaml` (Tier 1 node/dongle and Tier 2+ hub; `/dev/cu.usbmodem*` on macOS), `uv run bodyctl dashboard --port COM5`, `uv run bodyctl launch-chiaki`. Any `--port` command also takes `--sim <trace>` (simulated node, no hardware)
 - Tools: `uv run bodyctl record --port COM5`, `uv run bodyctl replay <trace>`, `uv run bodyctl plot <trace>`, `uv run bodyctl latency-video <video.mp4>`, `uv run bodyctl device stats --port COM5`, `uv run bodyctl hil --port <hub>` (Tier 2 bench test, one port at a time)
@@ -93,5 +93,6 @@ docs/                  plans
 - Access controller → PS5 latency over USB (measure in M4).
 - Whether Remote Play input coexists with local controllers (affects the side path).
 - Tier 0 on Windows: `vgamepad` needs ViGEmBus, archived upstream since 2023 but still installable; confirm chiaki-ng sees the virtual Xbox 360 pad in M2.
+  GTA V on PC (2026-11-04) reads XInput slot 1 only: the virtual pad must take slot 1 (start it with the real controller off), and `bodyctl webcam` then merges the real controller in.
 - Tier 1: whether chiaki-ng (SDL) recognizes the node's HID gamepad out of the box, or needs an `SDL_GAMECONTROLLERCONFIG` mapping string (M3).
 - GTA 6 controls and frame rate (known on 2026-11-19). Until then, develop and test on GTA V (PS5, Performance mode) with `config/profiles/gta5.yaml`.

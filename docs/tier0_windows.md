@@ -80,6 +80,13 @@ The dashboard looks like the drill window and shows the controller (`--pad xbox`
 default, or `--pad dualsense`) with the buttons the body presses lit up. To keep it next
 to a windowed game: `--window X,Y,W,H --on-top` (e.g. `--window 40,118,1500,844`).
 
+**Real controller alongside the body.** Games that read one controller (GTA V on PC reads
+controller slot 1 only) need the virtual pad in slot 1: turn your real controller off,
+start `bodyctl webcam`, then turn it back on. It lands in slot 2 and Bodyplay merges it
+into the virtual pad (buttons from either, a stick you move wins over the body's), so you
+can play with both at once. `bodyctl webcam` prints which slot each one is in;
+`--no-passthrough` turns the merge off.
+
 Dashboard keys only work while its window has focus: **p** pauses body input,
 **m** changes mode, **q** quits. Alt-tab to the dashboard before using those keys.
 
@@ -102,6 +109,10 @@ recording, a setup screen guides the camera: whole body in view, distance, camer
 level, and the camera angle. Always face the screen and move the camera. To make
 gestures work wherever the camera ends up, record from several angles:
 `--angles front,right30,left30` (also `right45`, `left45`).
+
+Add `--play` to also press the buttons in the game while you drill (virtual pad, with the
+same slot rule as above; `--window X,Y,W,H --on-top` keeps the drill next to the game), so
+you see on screen whether the game follows each move.
 
 During a drill, a beep and a gold title mark each cue; the side panel shows what was
 detected (check when expected, cross when not). The drill scores itself at the end.

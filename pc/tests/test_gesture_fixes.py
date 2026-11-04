@@ -82,3 +82,14 @@ def test_2d_guarding_fist_does_not_aim_but_a_level_arm_does():
         aim.img[i, W.R_WRIST, :2] = (sx - 0.3 * TORSO_PX, sy - 0.02 * TORSO_PX)
     assert "aim_start" not in [n for n, _ in names(guard, with_world=False)]
     assert "aim_start" in [n for n, _ in names(aim, with_world=False)]
+
+
+def test_losing_the_body_lets_go_of_the_lean():
+    tl = Timeline(3.0)
+    tl.lean(0.5, 3.0, 30)
+    g = WebcamGestures(load_profile(GTA5).gestures)
+    for p in tl.poses()[: tl.idx(2.0)]:
+        g.update(p)
+    assert g.state.lean_stick > 0.5
+    g.update(None)  # camera loses you
+    assert g.state.lean_stick == 0.0 and g.state.lean_deg == 0.0

@@ -472,6 +472,9 @@ def run_drill(
     angle: str = "front",
     pose: str = "auto",
     pad: str = "xbox",
+    gamepad=None,
+    window_rect: tuple[int, int, int, int] | None = None,
+    topmost: bool = False,
 ) -> Path | None:
     import cv2
 
@@ -505,8 +508,10 @@ def run_drill(
         }
     )
     gestures = WebcamGestures(prof.gestures)
-    # What the profile would press: shown on the controller picture, never sent anywhere.
-    gamepad = Gamepad(DryRunBackend(), prof.press.hold_ms, prof.press.release_ms)
+    # What the profile presses: shown on the controller picture, and sent to the game
+    # only when the caller passes a real gamepad (webcam-drill --play).
+    if gamepad is None:
+        gamepad = Gamepad(DryRunBackend(), prof.press.hold_ms, prof.press.release_ms)
     engine = BindingEngine(prof, gamepad)
     beep = _Beeper(sound)
     writer = None
@@ -514,7 +519,7 @@ def run_drill(
         fourcc = cv2.VideoWriter_fourcc(*"mp4v")
         writer = cv2.VideoWriter(str(path.with_suffix(".mp4")), fourcc, cam.fps or fps, cam.size)
     window = "bodyplay drill"
-    V.open_window(window)
+    V.open_window(window, window_rect, topmost)
     show_skeleton = True
     hud = V.Hud(size=cam.size)
     quality: deque[float] = deque(maxlen=V.SIGNAL_COLS * V.SIGNAL_ROWS)
@@ -634,6 +639,8 @@ def run_drill(
     except KeyboardInterrupt:
         print("stopped early")
     finally:
+        gamepad.release_all(last_t or 0)  # nothing stays pressed in the game
+        gamepad.update(last_t or 0)
         if writer is not None:
             writer.release()
         cam.close()

@@ -280,6 +280,7 @@ class WebcamGestures:
         motion history, so the next frame that counts doesn't see a jump in it."""
         self._check_stop(t_us, events)
         t = t_us or 0
+        self.state.lean_deg = self.state.lean_stick = 0.0  # a lost body doesn't keep leaning
         if self.state.aiming:
             self.state.aiming = False
             events.append(GestureEvent("aim_end", t, 1.0))

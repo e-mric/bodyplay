@@ -92,6 +92,11 @@ def cmd_webcam(args: argparse.Namespace) -> int:
     backend = open_backend(args.backend, verbose=args.verbose)
     gamepad = Gamepad(backend, prof.press.hold_ms, prof.press.release_ms, open_marker(args.marker_port))
     print(f"profile {Path(profile).as_posix()}, gamepad backend {type(backend).__name__}")
+    if hasattr(backend, "slot"):
+        if backend.slot is None:  # without it, passthrough could read the virtual pad back
+            print("virtual pad slot unknown: real controller passthrough off")
+        else:
+            _start_passthrough(gamepad, backend.slot, args.passthrough)
     return run_webcam(
         prof,
         gamepad,
@@ -107,9 +112,33 @@ def cmd_webcam(args: argparse.Namespace) -> int:
     )
 
 
+def _start_passthrough(gamepad, slot: int, enabled: bool) -> None:
+    """Merge your real controller into the virtual pad, and say where each one sits."""
+    from bodyctl.output.passthrough import Passthrough
+
+    try:
+        pt = Passthrough(gamepad, slot)
+        real = pt.real_slots()
+    except OSError as e:
+        print(f"virtual pad in controller slot {slot + 1}; no passthrough ({e})")
+        return
+    print(
+        f"virtual pad in controller slot {slot + 1}"
+        + (f", real controller in slot {real[0] + 1}" if real else "")
+    )
+    if slot != 0:
+        print(
+            "  games that read one controller (GTA V) use slot 1, the real one: turn it off, restart"
+            " this, then turn it back on to use both"
+        )
+    if enabled:
+        gamepad.passthrough = pt.start()
+        print("  real controller passthrough on: it works alongside the body (--no-passthrough to stop)")
+
+
 def cmd_webcam_drill(args: argparse.Namespace) -> int:
     from bodyctl.sensors.webcam_pose import pose_label
-    from bodyctl.tools.drill import ANGLES, MOVES, WORKOUT_MOVES, run_drill
+    from bodyctl.tools.drill import ANGLES, MOVES, WORKOUT_MOVES
     from bodyctl.tools.webcam_tune import default_profile
 
     standing = [m for m in MOVES if m not in WORKOUT_MOVES]
@@ -121,13 +150,36 @@ def cmd_webcam_drill(args: argparse.Namespace) -> int:
         return 1
     profile = args.profile or default_profile(pose_label(args.pose, args.model))
     w, _, h = args.size.partition("x")
+    gamepad = None
+    if args.play:  # the drill's presses also reach the game, through the virtual pad
+        from bodyctl.config.profile import load_profile
+        from bodyctl.output.gamepad import Gamepad, open_backend
+
+        prof = load_profile(profile)
+        backend = open_backend("vgamepad")
+        gamepad = Gamepad(backend, prof.press.hold_ms, prof.press.release_ms)
+        if backend.slot is None:
+            print("virtual pad slot unknown: real controller passthrough off")
+        else:
+            _start_passthrough(gamepad, backend.slot, True)
+    try:
+        return _drill_angles(args, moves, angles, profile, (int(w), int(h)), gamepad)
+    finally:
+        if gamepad is not None:
+            gamepad.close()
+
+
+def _drill_angles(args, moves, angles, profile, size, gamepad) -> int:
+    from bodyctl.tools.drill import run_drill
+
+    window = tuple(int(v) for v in args.window.split(",")) if args.window else None
     for angle in angles:
         path = run_drill(
             moves,
             args.reps,
             profile,
             args.camera,
-            (int(w), int(h)),
+            size,
             args.fps,
             args.model,
             args.out,
@@ -136,6 +188,9 @@ def cmd_webcam_drill(args: argparse.Namespace) -> int:
             angle=angle,
             pose=args.pose,
             pad=args.pad,
+            gamepad=gamepad,
+            window_rect=window,
+            topmost=args.on_top,
         )
         if path is None:
             print("quit")
@@ -476,6 +531,12 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--window", metavar="X,Y,W,H", help="dashboard position and size, e.g. 40,118,1500,844")
     sp.add_argument("--on-top", action="store_true", help="keep the dashboard above other windows (the game)")
     sp.add_argument("--pad", choices=["xbox", "dualsense"], default="xbox", help="controller picture")
+    sp.add_argument(
+        "--no-passthrough",
+        dest="passthrough",
+        action="store_false",
+        help="don't merge your real controller into the virtual pad",
+    )
     sp.add_argument("--verbose", action="store_true", help="dry-run: print every gamepad report")
 
     sp = add(
@@ -520,6 +581,11 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--video", action="store_true", help="also save the camera video (.mp4)")
     sp.add_argument("--no-sound", action="store_true", help="no beep on each cue")
     sp.add_argument("--pad", choices=["xbox", "dualsense"], default="xbox", help="controller picture")
+    sp.add_argument(
+        "--play", action="store_true", help="also press the buttons in the game (virtual pad, Windows)"
+    )
+    sp.add_argument("--window", metavar="X,Y,W,H", help="drill window position and size")
+    sp.add_argument("--on-top", action="store_true", help="keep the drill window above the game")
 
     sp = add("webcam-tune", "Tier 0: tune gesture thresholds on drill recordings", cmd_webcam_tune)
     sp.add_argument("recordings", nargs="*", help="drill .npz files (default: all in data/drills)")
