@@ -88,6 +88,10 @@ def cmd_webcam(args: argparse.Namespace) -> int:
 
     profile = args.profile or default_profile(pose_label(args.pose, args.model))
     prof = load_profile(profile)
+    if args.game:  # the game's controls, with your tuned thresholds
+        game = load_profile(Path("config/profiles") / f"{args.game}.yaml")
+        prof = game.model_copy(update={"gestures": prof.gestures})
+        profile = f"{Path(profile).as_posix()} thresholds + {args.game} controls"
     w, _, h = args.size.partition("x")
     backend = open_backend(args.backend, verbose=args.verbose)
     gamepad = Gamepad(backend, prof.press.hold_ms, prof.press.release_ms, open_marker(args.marker_port))
@@ -523,6 +527,10 @@ def build_parser() -> argparse.ArgumentParser:
     pose_help = "pose model: rtmpose (NVIDIA GPU), mediapipe, or auto (rtmpose if available)"
     sp = add("webcam", "Tier 0: webcam pose -> gestures -> virtual gamepad", cmd_webcam)
     sp.add_argument("--profile", help="default: the tuned profile for the pose model if any, else gta5.yaml")
+    sp.add_argument(
+        "--game",
+        help="play another game's controls (config/profiles/<game>.yaml, e.g. gta6) with these thresholds",
+    )
     sp.add_argument("--pose", choices=["auto", "mediapipe", "rtmpose"], default="auto", help=pose_help)
     sp.add_argument(
         "--backend",

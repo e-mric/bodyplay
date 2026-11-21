@@ -105,6 +105,7 @@ enum Mode : uint8_t {
   MODE_PLANE = 6,
   MODE_QTE = 7,
   MODE_PAUSED = 8,
+  MODE_FITNESS = 9,  // GTA 6 gym workouts (held triggers per rep)
 };
 
 enum Flags : uint8_t {

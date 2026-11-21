@@ -78,9 +78,20 @@ class BindingEngine:
             gp.set_stick(flight.stick, state.source("fly_roll"), state.source("fly_pitch"))
         workout = extras.workout
         if workout is not None and self._in_modes(workout.modes):
-            for name in events:
-                if name in ("pushup", "pullup"):
-                    gp.press(workout.tap, now_us)
+            if workout.style == "tap":
+                for name in events:
+                    if name in ("pushup", "pullup"):
+                        gp.press(workout.tap, now_us)
+            elif state.condition("working_out"):
+                # Overrides the ports' triggers during a set (nobody aims mid push-up).
+                for trigger in workout.triggers:
+                    gp.set_trigger(trigger, state.source("workout_press"))
+                last = self._last_pulse_us.get("workout_struggle")
+                if state.condition("workout_struggling") and (
+                    last is None or now_us - last >= 1e6 / workout.struggle_hz
+                ):
+                    self._last_pulse_us["workout_struggle"] = now_us
+                    gp.press(workout.struggle_tap, now_us)
         cover = extras.cover
         if cover is not None and self._in_modes(cover.modes):
             for name in events:

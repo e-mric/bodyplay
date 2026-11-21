@@ -97,6 +97,7 @@ class Mode(IntEnum):
     PLANE = 6
     QTE = 7
     PAUSED = 8
+    FITNESS = 9  # GTA 6 gym workouts (held triggers per rep)
 
 
 class Flags(IntFlag):

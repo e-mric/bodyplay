@@ -207,6 +207,16 @@ class WebcamParams(_Strict):
         0.85, gt=0, le=1, description="Push-up: back above this share of the top = one rep"
     )
     pushup_top_window_ms: int = Field(3000, gt=0, description="Push-up: the top is the highest in this long")
+    rep_top: float = Field(
+        0.95, gt=0, le=1, description="Rep progress counted as the top (where a held-press workout lets go)"
+    )
+    rep_move_speed: float = Field(
+        0.3, gt=0, description="Rep progress per second that counts as moving up or down (not pausing)"
+    )
+    rep_struggle_speed: float = Field(
+        0.25, gt=0, description="Rising slower than this (progress/s) partway up = struggling"
+    )
+    rep_struggle_ms: int = Field(400, ge=0, description="... for this long before the struggle button mashes")
     pullup_bottom_deg: float = Field(
         140, gt=0, lt=180, description="Pull-up: elbow above this = hanging straight"
     )
@@ -415,14 +425,22 @@ class Flight(_Strict):
 
 
 class Workout(_Strict):
-    """Push-ups and pull-ups for in-game workouts: each rep taps a button."""
+    """Push-ups and pull-ups for in-game workouts.
 
-    tap: str = Field(
-        "cross", description="Tapped once per push-up or pull-up rep (a guess until GTA 6's controls)"
+    style tap: one button tap per rep. style triggers (GTA 6 fitness): the triggers are
+    pressed harder as the rep goes up, released at the top and pressed again from the
+    bottom; while a rep is stuck partway up, `struggle_tap` is mashed."""
+
+    style: Literal["tap", "triggers"] = Field("tap", description="tap per rep, or held triggers (GTA 6)")
+    tap: str = Field("cross", description="style tap: tapped once per push-up or pull-up rep")
+    triggers: list[Literal["l2", "r2"]] = Field(
+        default_factory=lambda: ["l2", "r2"], description="style triggers: pressed through each rep"
     )
+    struggle_tap: str = Field("cross", description="style triggers: mashed while a rep is stuck")
+    struggle_hz: float = Field(8.0, gt=0, le=15, description="Mash rate (rule 8 caps presses at ~15 Hz)")
     modes: list[str] = Field(default_factory=lambda: ["on_foot"], description="Game modes it works in")
 
-    @field_validator("tap")
+    @field_validator("tap", "struggle_tap")
     @classmethod
     def _button(cls, v: str) -> str:
         if v not in BUTTON_OUTPUTS:

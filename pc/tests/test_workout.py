@@ -200,3 +200,57 @@ def test_set_survives_the_camera_losing_the_hands():
     events, _ = run(f)
     names = [n for n, _ in events]
     assert names.count("workout_start") == 1 and names.count("workout_end") == 1
+
+
+GTA6 = "config/profiles/gta6.yaml"
+
+
+def fitness_reports(frames: Frames):
+    from bodyctl.mapping import BindingEngine
+    from bodyctl.output.gamepad import DryRunBackend, Gamepad
+
+    prof = load_profile(GTA6)
+    gp = Gamepad(DryRunBackend(), prof.press.hold_ms, prof.press.release_ms)
+    engine = BindingEngine(prof, gp, mode="fitness")
+    g = WebcamGestures(prof.gestures)
+    out = []
+    for p in frames.poses():
+        events = g.update(p)
+        engine.apply(g.state, events, p.t_us)
+        out.append((p.t_us / 1e6, gp.report, g.state.workout_progress))
+    return out
+
+
+def test_gta6_pullups_press_l2_r2_up_the_rep_and_release_at_the_top():
+    rows = fitness_reports(pullup_set(3))
+    pressed = [(t, r, p) for t, r, p in rows if r.l2 > 0]
+    assert pressed and all(r.l2 == r.r2 for _, r, _ in pressed)  # both triggers together
+    assert all(abs(r.l2 - p) < 1e-6 and p < 1.0 for _, r, p in pressed)  # pressure = how far up the rep
+    tops = [r for _, r, p in rows if p >= 1.0]
+    assert tops and all(r.l2 == 0.0 for r in tops)  # let go at the top
+    # Pressed again from the bottom for every rep: one real press (past half pressure) per rep.
+    starts = sum(1 for (_, a, _), (_, b, _) in zip(rows, rows[1:], strict=False) if b.l2 >= 0.5 > a.l2)
+    assert starts == 3
+    assert not any("cross" in r.buttons for _, r, _ in rows)  # no struggle
+
+
+def test_gta6_stuck_rep_mashes_x():
+    f, stand = Frames(), standing()[0]
+    f.hold(stand, 1.0)
+    f.blend(stand, hang(2 * HANG_ARM), 0.6)
+    f.hold(hang(2 * HANG_ARM), 0.8)
+    f.blend(hang(2 * HANG_ARM), hang(101.0), 0.6)  # pulling up, elbows to ~115 deg...
+    f.hold(hang(101.0), 2.0)  # ...and stuck halfway
+    f.blend(hang(101.0), hang(2 * HANG_ARM), 0.5)
+    rows = fitness_reports(f)
+    stuck = [r for t, r, _ in rows if 3.6 < t < 4.9]
+    presses = sum(
+        1 for a, b in zip(stuck, stuck[1:], strict=False) if "cross" in b.buttons and "cross" not in a.buttons
+    )
+    assert presses >= 5  # mashing at ~8 Hz
+    assert all(0.2 < r.l2 < 0.8 for r in stuck)  # still holding the triggers where the rep is
+
+
+def test_gta5_workout_still_taps():
+    prof = load_profile("config/profiles/gta5.yaml")
+    assert prof.tier0.workout.style == "tap" and prof.tier0.workout.modes == ["on_foot"]

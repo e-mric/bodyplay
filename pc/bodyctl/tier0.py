@@ -20,7 +20,7 @@ from bodyctl.output.marker import MultiMarker
 from bodyctl.sensors.webcam_pose import now_us
 from bodyctl.tools.stats import StageStats
 
-MODE_CYCLE = ("on_foot", "car", "heli", "swim", "qte")
+MODE_CYCLE = ("on_foot", "car", "heli", "swim", "qte", "fitness")
 
 
 @dataclass

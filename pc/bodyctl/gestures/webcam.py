@@ -78,6 +78,9 @@ class BodyState:
     aim_hand_px: tuple[float, float] | None = None  # and where it is now
     workout: str = ""  # "pushup" (in a plank) or "pullup" (hanging from a bar); "" = standing
     workout_reps: int = 0  # reps in the current set
+    workout_progress: float = 0.0  # where the rep is: 0 bottom (arms straight) .. 1 top
+    workout_rising: bool = False  # on the way up (the press phase), not yet at the top
+    workout_struggling: bool = False  # rising but stuck: barely moving partway up
 
     def source(self, name: str) -> float:
         """Continuous sources referenced by profile bindings."""
@@ -92,6 +95,7 @@ class BodyState:
             "wheel_y": self.wheel_y,
             "fly_roll": self.fly_roll,
             "fly_pitch": self.fly_pitch,
+            "workout_press": self.workout_progress if self.workout_rising else 0.0,
             "aim_x": self.aim_x,
             "aim_y": self.aim_y,
         }.get(name, 0.0)
@@ -104,6 +108,7 @@ class BodyState:
             "wheel_open": self.wheel_open,
             "flying": self.flying,
             "working_out": bool(self.workout),
+            "workout_struggling": self.workout_struggling,
         }.get(name, False)
 
 
@@ -207,6 +212,9 @@ class WebcamGestures:
         self._posture_lost_us: int | None = None
         self._rep_armed = False  # push-up: been down; pull-up: hung with straight arms
         self._tops: deque[tuple[int, float]] = deque()  # push-up: (t_us, shoulder height above hands)
+        self._rep_last: tuple[int, float] | None = None  # (t_us, rep progress) last frame
+        self._rep_speed = 0.0  # rep progress per second, smoothed (+ = going up)
+        self._stuck_since_us: int | None = None
         self._settling = False  # getting back up after a set: standing gestures wait
         self._settle_since_us = 0
         wp = self.params.webcam
@@ -380,13 +388,45 @@ class WebcamGestures:
                 self._rep_armed = True
             elif self._rep_armed and arm_px > wp.pushup_up * top:
                 self._rep(t, events)
+            self._rep_phase(t, (arm_px / top - wp.pushup_down) / (1 - wp.pushup_down))
         elif self.state.workout == "pullup" and hang:
             elbow = float(np.mean([self._elbow_deg(pose, a, torso_px) for a in self._arms]))
             if elbow > wp.pullup_bottom_deg:
                 self._rep_armed = True
             elif self._rep_armed and elbow < wp.pullup_top_deg:
                 self._rep(t, events)
+            self._rep_phase(t, (wp.pullup_bottom_deg - elbow) / (wp.pullup_bottom_deg - wp.pullup_top_deg))
+        elif self.state.workout:  # out of the posture (letting go of the bar): nothing is pressed
+            self.state.workout_rising = self.state.workout_struggling = False
+            self._rep_last = None
         return busy or kind is not None
+
+    def _rep_phase(self, t_us: int, progress: float) -> None:
+        """Where the rep is and which way it goes, for games that hold a button through
+        each rep (GTA 6's fitness: L2+R2 pressed harder on the way up, released at the top,
+        pressed again from the bottom, X mashed when the character struggles)."""
+        wp = self.params.webcam
+        st = self.state
+        progress = min(1.0, max(0.0, progress))
+        last = self._rep_last
+        self._rep_last = (t_us, progress)
+        st.workout_progress = progress
+        if last is None or t_us <= last[0]:
+            return
+        speed = (progress - last[1]) / ((t_us - last[0]) / 1e6)
+        self._rep_speed += 0.4 * (speed - self._rep_speed)  # progress/s, smoothed
+        if progress >= wp.rep_top:
+            st.workout_rising = False  # at the top: let go
+        elif self._rep_speed > wp.rep_move_speed:
+            st.workout_rising = True
+        elif self._rep_speed < -wp.rep_move_speed:
+            st.workout_rising = False  # coming down
+        stuck = st.workout_rising and progress > 0.15 and abs(self._rep_speed) < wp.rep_struggle_speed
+        if stuck:
+            self._stuck_since_us = self._stuck_since_us or t_us
+        else:
+            self._stuck_since_us = None
+        st.workout_struggling = stuck and (t_us - self._stuck_since_us) / 1000 >= wp.rep_struggle_ms
 
     def _posture(self, kind: str | None, t_us: int, events: list[GestureEvent]) -> bool:
         """Start a set after `workout_hold_ms` in the posture, end it after
@@ -398,6 +438,7 @@ class WebcamGestures:
                 self._posture_since_us = self._posture_since_us or t_us
                 if (t_us - self._posture_since_us) / 1000 >= wp.workout_hold_ms:
                     self.state.workout, self.state.workout_reps = kind, 0
+                    self._end_rep_phase()
                     self._rep_armed = False
                     self._tops.clear()
                     events.append(GestureEvent("workout_start", t_us, 1.0))
@@ -409,10 +450,16 @@ class WebcamGestures:
         if (t_us - self._posture_lost_us) / 1000 < wp.workout_release_ms:
             return True
         self.state.workout = ""
+        self._end_rep_phase()
         self._posture_lost_us = None
         self._settling, self._settle_since_us = True, t_us
         events.append(GestureEvent("workout_end", t_us, 1.0))
         return False
+
+    def _end_rep_phase(self) -> None:
+        self._rep_last, self._rep_speed, self._stuck_since_us = None, 0.0, None
+        st = self.state
+        st.workout_progress, st.workout_rising, st.workout_struggling = 0.0, False, False
 
     def _rep(self, t_us: int, events: list[GestureEvent]) -> None:
         self._rep_armed = False
