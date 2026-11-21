@@ -20,6 +20,11 @@ import numpy as np
 
 from bodyctl.config.profile import Gestures
 
+# Fitness mode exercises looked for only when picked (they look like play otherwise), and
+# the ones whose bar starts on the rack, lifted off as the set starts.
+GYM_ONLY = ("squat", "deadlift", "bench", "bag")
+TOP_START = ("squat", "bench")
+
 # BlazePose landmark indices.
 NOSE = 0
 L_SHOULDER, R_SHOULDER = 11, 12
@@ -49,7 +54,7 @@ class Pose:
 class GestureEvent:
     name: str  # jump, crouch, step, run_start, run_stop, punch, aim_start, aim_end, shoot,
     # wheel_open, wheel_close, stand (back up after a crouch), fly_start, fly_end,
-    # workout_start, workout_end, pushup, pullup, kettlebell (one per completed rep)
+    # workout_start, workout_end, pushup, pullup, kettlebell, squat, deadlift, bench (one per rep)
     t_us: int
     confidence: float
 
@@ -82,6 +87,8 @@ class BodyState:
     workout_rising: bool = False  # pressing: from starting up until going back down (held at the top)
     workout_struggling: bool = False  # rising but stuck: barely moving partway up
     exercise_name: str = ""  # fitness mode: the picked exercise, for display
+    bag_hitting: bool = False  # punching bag: a hand is moving fast
+    last_workout: str = ""  # the set that just ended (the bag has no "put down")
 
     def source(self, name: str) -> float:
         """Continuous sources referenced by profile bindings."""
@@ -110,6 +117,8 @@ class BodyState:
             "flying": self.flying,
             "working_out": bool(self.workout),
             "workout_struggling": self.workout_struggling,
+            "bag_hitting": self.bag_hitting,
+            "exit_after_set": self.last_workout != "bag",
         }.get(name, False)
 
 
@@ -216,6 +225,8 @@ class WebcamGestures:
         self._rep_armed = False  # push-up: been down; pull-up: hung with straight arms
         self._tops: deque[tuple[int, float]] = deque()  # push-up: (t_us, shoulder height above hands)
         self._rep_last: tuple[int, float] | None = None  # (t_us, rep progress) last frame
+        self._set_top = 0.0  # squat / deadlift / bench: the tallest measure this set (= the top)
+        self._bag_last: tuple[int, np.ndarray] | None = None  # (t_us, wrists / torso) last frame
         self._rep_speed = 0.0  # rep progress per second, smoothed (+ = going up)
         self._stuck_since_us: int | None = None
         self._settling = False  # getting back up after a set: standing gestures wait
@@ -340,6 +351,59 @@ class WebcamGestures:
             return None
         return np.average(pose.img[[left, right], :2][ok], axis=0, weights=v[ok])
 
+    def _gym_posture(self, pose: Pose, sh, wr, hip, torso_px: float) -> str | None:
+        """The picked gym exercise's posture, or None (out of it: the set ends).
+        squat: both hands at shoulder height (a bar on your back);
+        deadlift: hands at or below the hips (holding the bar);
+        bench: lying (shoulders level with the hips, side-on) with the arms up;
+        bag: any time the hands are seen."""
+        wp = self.params.webcam
+        ex = self.exercise
+        if torso_px < 1e-6:
+            return None
+        hands_up = float(sh[1] - wr[1]) / torso_px  # hands above the shoulders (torso lengths)
+        if ex == "squat":
+            return (
+                "squat"
+                if abs(hands_up) < wp.bar_hands and self._thigh(pose, hip, torso_px) is not None
+                else None
+            )
+        if ex == "deadlift":
+            low = float(wr[1] - hip[1]) / torso_px > -wp.bar_hands  # hands not raised above the hips
+            return "deadlift" if low else None
+        if ex == "bench":
+            lying = abs(float(hip[1] - sh[1])) / torso_px < wp.bench_flat
+            arms = hands_up > (-0.1 if self.state.workout == "bench" else wp.bench_arms_up)
+            return "bench" if lying and arms else None
+        if ex == "bag":
+            return "bag" if self._visible(pose, L_WRIST, R_WRIST) else None
+        return None
+
+    def _gym_measure(self, pose: Pose, sh, wr, hip, torso_px: float) -> float | None:
+        """How tall the lift stands now (larger = higher): squat, the hip-to-knee gap;
+        deadlift, the shoulders' height above the hips; bench, the hands' height above
+        the shoulders. Each rep's progress compares it with the tallest this set."""
+        ex = self.state.workout
+        if ex == "squat":
+            return self._thigh(pose, hip, torso_px)
+        if ex == "deadlift":
+            return float(hip[1] - sh[1])
+        if ex == "bench":
+            return float(sh[1] - wr[1])
+        return None
+
+    def _bag(self, pose: Pose, torso_px: float) -> None:
+        """Punching bag: hitting while either hand moves fast (any punch counts)."""
+        wp = self.params.webcam
+        t = pose.t_us
+        w = pose.img[[L_WRIST, R_WRIST], :2] / torso_px
+        last = self._bag_last
+        self._bag_last = (t, w)
+        if last is None or t <= last[0]:
+            return
+        speed = float(np.max(np.linalg.norm(w - last[1], axis=1))) / ((t - last[0]) / 1e6)
+        self.state.bag_hitting = speed > wp.bag_speed
+
     def _kettlebell(self, pose: Pose, torso_px: float) -> bool:
         """Both hands together on a kettlebell handle, below the shoulders (fitness mode
         only: hands clasped in front are too common in play to start a set)."""
@@ -402,6 +466,8 @@ class WebcamGestures:
         )
         # Hands together near the knees also pass the push-up check: the swing wins.
         kind = "pullup" if hang else "kettlebell" if swing else "pushup" if floor else None
+        if self.fitness and self.exercise in GYM_ONLY:
+            kind = self._gym_posture(pose, sh, wr, hip, torso_px)
         if self.state.workout and kind != self.state.workout:
             kind = None
         busy = self._posture(kind, t, events)
@@ -432,6 +498,20 @@ class WebcamGestures:
                 elif self._rep_armed and progress > wp.swing_high:
                     self._rep(t, events)
                 self._rep_phase(t, progress)
+        elif self.state.workout in ("squat", "deadlift", "bench") and kind == self.state.workout:
+            measure = self._gym_measure(pose, sh, wr, hip, torso_px)
+            if measure is not None and measure > 1e-6:
+                self._set_top = max(self._set_top, measure)
+                bottom = {"squat": wp.squat_bottom, "deadlift": wp.deadlift_bottom, "bench": wp.bench_bottom}
+                b = bottom[self.state.workout]
+                progress = (measure / self._set_top - b) / (1 - b)
+                if progress < wp.rep_low:
+                    self._rep_armed = True
+                elif self._rep_armed and progress > wp.rep_high:
+                    self._rep(t, events)
+                self._rep_phase(t, progress)
+        elif self.state.workout == "bag" and kind == "bag":
+            self._bag(pose, torso_px)
         elif self.state.workout:  # out of the posture (letting go of the bar): nothing is pressed
             self.state.workout_rising = self.state.workout_struggling = False
             self._rep_last = None
@@ -482,6 +562,9 @@ class WebcamGestures:
                     self._end_rep_phase()
                     self._rep_armed = False
                     self._tops.clear()
+                    self._set_top, self._bag_last = 0.0, None
+                    if kind in TOP_START:  # the bar starts on the rack: lift it off right away
+                        self.state.workout_rising = True
                     events.append(GestureEvent("workout_start", t_us, 1.0))
             return bool(self.state.workout)
         self._posture_since_us = None
@@ -490,8 +573,9 @@ class WebcamGestures:
         self._posture_lost_us = self._posture_lost_us or t_us
         if (t_us - self._posture_lost_us) / 1000 < wp.workout_release_ms:
             return True
-        self.state.workout = ""
+        self.state.last_workout, self.state.workout = self.state.workout, ""
         self._end_rep_phase()
+        self.state.bag_hitting = False
         self._posture_lost_us = None
         self._settling, self._settle_since_us = True, t_us
         events.append(GestureEvent("workout_end", t_us, 1.0))

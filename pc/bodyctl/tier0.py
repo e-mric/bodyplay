@@ -21,7 +21,7 @@ from bodyctl.sensors.webcam_pose import now_us
 from bodyctl.tools.stats import StageStats
 
 MODE_CYCLE = ("on_foot", "car", "heli", "swim", "qte", "fitness")
-EXERCISES = ("", "pushup", "pullup", "kettlebell")  # fitness mode, key e ("" = any)
+EXERCISES = ("", "pushup", "pullup", "kettlebell", "squat", "deadlift", "bench", "bag")  # key e ("" = any)
 
 
 @dataclass

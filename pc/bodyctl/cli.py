@@ -534,7 +534,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sp.add_argument(
         "--exercise",
-        choices=["", "pushup", "pullup", "kettlebell"],
+        choices=["", "pushup", "pullup", "kettlebell", "squat", "deadlift", "bench", "bag"],
         default="",
         help="fitness mode: the exercise to look for (key e cycles them; default any)",
     )

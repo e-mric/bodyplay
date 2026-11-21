@@ -205,14 +205,14 @@ def test_set_survives_the_camera_losing_the_hands():
 GTA6 = "config/profiles/gta6.yaml"
 
 
-def fitness_reports(frames: Frames):
+def fitness_reports(frames: Frames, exercise: str = ""):
     from bodyctl.mapping import BindingEngine
     from bodyctl.output.gamepad import DryRunBackend, Gamepad
 
     prof = load_profile(GTA6)
     gp = Gamepad(DryRunBackend(), prof.press.hold_ms, prof.press.release_ms)
     engine = BindingEngine(prof, gp, mode="fitness")
-    g = WebcamGestures(prof.gestures, fitness=True)
+    g = WebcamGestures(prof.gestures, fitness=True, exercise=exercise)
     out = []
     for p in frames.poses():
         events = g.update(p)
@@ -307,3 +307,116 @@ def test_kettlebell_reps_and_tier0_fitness_mode():
     app.engine.set_mode("fitness", 0)
     names = [e.name for p in swing_set(4).poses() for e in app.step(p.t_us, p, t_pose_us=p.t_us).events]
     assert names.count("workout_start") == 1 and names.count("kettlebell") == 4
+
+
+def edges(rows, button: str) -> int:
+    return sum(1 for (_, a, _), (_, b, _) in zip(rows, rows[1:], strict=False)
+               if button in b.buttons and button not in a.buttons)  # fmt: skip
+
+
+def presses(rows) -> int:
+    """Real trigger presses (past half pressure)."""
+    return sum(1 for (_, a, _), (_, b, _) in zip(rows, rows[1:], strict=False) if b.l2 >= 0.5 > a.l2)
+
+
+def squat_pose(depth: float) -> np.ndarray:
+    """Bar on the back (hands at shoulder height), hips `depth` px lower: the knees bend."""
+    img, _ = standing()
+    img[: W.L_KNEE, 1] += depth
+    img[W.L_WRIST, :2], img[W.R_WRIST, :2] = (395, 150 + depth), (245, 150 + depth)
+    img[W.L_ELBOW, :2], img[W.R_ELBOW, :2] = (410, 200 + depth), (230, 200 + depth)
+    return img
+
+
+def test_gta6_squats_unrack_then_press_each_rise():
+    f, stand = Frames(), standing()[0]
+    f.hold(stand, 1.0)
+    f.blend(stand, squat_pose(0), 0.5)  # hands up to the bar
+    f.hold(squat_pose(0), 1.0)
+    f.reps(squat_pose, 0.0, 70.0, 3, rep_s=2.0)  # down and back up, 3 times
+    f.blend(squat_pose(0), stand, 0.5)  # hands down: rack it
+    f.hold(stand, 1.5)
+    rows = fitness_reports(f, "squat")
+    t_start = next(t for t, r, _ in rows if r.l2 > 0.9)
+    assert t_start < 2.6  # unracked as the set starts, before the first squat (from 2.5 s)
+    assert presses(rows) == 3 + 1  # the unrack, then one press per rise
+    assert edges(rows, "circle") == 1  # RANGER
+    g = WebcamGestures(load_profile(GTA6).gestures, fitness=True, exercise="squat")
+    assert [e.name for p in f.poses() for e in g.update(p)].count("squat") == 3
+
+
+def deadlift_pose(bend: float) -> np.ndarray:
+    """Holding the bar with straight arms: bend 0 = upright, 1 = hinged (shoulders lowered
+    90 px toward the hips, bar at the shins)."""
+    img, _ = standing()
+    d = 90 * bend
+    for j in (W.NOSE, W.L_SHOULDER, W.R_SHOULDER):
+        img[j, 1] += d
+    img[W.L_ELBOW, 1] += 1.5 * d
+    img[W.R_ELBOW, 1] += 1.5 * d
+    img[W.L_WRIST, 1] += 1.8 * d
+    img[W.R_WRIST, 1] += 1.8 * d
+    return img
+
+
+def test_gta6_deadlifts_press_on_the_way_up():
+    f, stand = Frames(), standing()[0]
+    f.hold(stand, 1.0)
+    f.blend(stand, deadlift_pose(1.0), 1.0)  # hinge down to the bar
+    f.hold(deadlift_pose(1.0), 1.0)
+    f.reps(deadlift_pose, 1.0, 0.0, 3, rep_s=2.0)  # starting at the bottom: up, down
+    let_go = deadlift_pose(1.0)
+    let_go[[W.L_WRIST, W.R_WRIST], 1] = 160  # bar down at the bottom, hands up off it: POSER
+    f.blend(deadlift_pose(1.0), let_go, 0.3)
+    f.hold(let_go, 1.0)
+    f.blend(let_go, stand, 0.8)
+    f.hold(stand, 1.5)
+    rows = fitness_reports(f, "deadlift")
+    assert presses(rows) == 3
+    assert edges(rows, "circle") == 1
+    pressed = [(r, p) for _, r, p in rows if r.l2 > 0]
+    assert all(abs(r.l2 - p) < 1e-6 for r, p in pressed)
+
+
+def bench_pose(h: float) -> np.ndarray:
+    """Lying side-on, arms pressing up: hands h px above the shoulders (150 = locked out)."""
+    img, _ = standing()
+    pts = {W.NOSE: (170, 395), W.L_SHOULDER: (200, 400), W.R_SHOULDER: (200, 402), W.L_HIP: (350, 410),
+           W.R_HIP: (350, 412), W.L_KNEE: (450, 420), W.R_KNEE: (450, 422), W.L_ANKLE: (520, 470),
+           W.R_ANKLE: (520, 472), W.L_WRIST: (200, 400 - h), W.R_WRIST: (200, 402 - h),
+           W.L_ELBOW: (235, 400 - h / 2), W.R_ELBOW: (235, 402 - h / 2)}  # fmt: skip
+    for j, xy in pts.items():
+        img[j, :2] = xy
+    return img
+
+
+def test_gta6_bench_unrack_press_up_rack():
+    f, stand = Frames(), standing()[0]
+    f.hold(stand, 1.0)
+    f.blend(stand, bench_pose(150), 1.0)  # lie down, arms up under the bar
+    f.hold(bench_pose(150), 1.0)
+    f.reps(bench_pose, 150.0, 40.0, 3, rep_s=2.0)
+    f.blend(bench_pose(150), stand, 1.0)  # sit up: rack it
+    f.hold(stand, 1.5)
+    rows = fitness_reports(f, "bench")
+    assert presses(rows) == 3 + 1  # unrack, then one press per rep
+    assert edges(rows, "circle") == 1
+
+
+def test_gta6_punching_bag_mashes_square_only_while_hitting():
+    f, stand = Frames(), standing()[0]
+    guard = stand.copy()
+    guard[W.L_WRIST, :2], guard[W.R_WRIST, :2] = (350, 120), (290, 120)
+    guard[W.L_ELBOW, :2], guard[W.R_ELBOW, :2] = (380, 200), (260, 200)
+    f.hold(guard, 1.5)
+    for _ in range(6):  # quick jabs: the left hand shoots out 90 px in 0.1 s and back
+        jab = guard.copy()
+        jab[W.L_WRIST, :2] = (440, 120)
+        f.blend(guard, jab, 0.1)
+        f.blend(jab, guard, 0.15)
+    f.hold(guard, 2.0)  # still: no hitting
+    rows = fitness_reports(f, "bag")
+    squares = [t for (_, a, _), (t, b, _) in zip(rows, rows[1:], strict=False)
+               if "square" in b.buttons and "square" not in a.buttons]  # fmt: skip
+    assert len(squares) >= 6 and all(1.4 < t < 3.3 for t in squares)  # while jabbing (1.5-3.0 s), not after
+    assert edges(rows, "circle") == 0 and not any(r.l2 for _, r, _ in rows)  # no rep triggers, no POSER

@@ -217,6 +217,39 @@ class WebcamParams(_Strict):
         0.25, description="Kettlebell: hands below this (0 knees .. 1 shoulders) = bottom"
     )
     swing_high: float = Field(0.85, description="Kettlebell: hands above this after the bottom = one swing")
+    bar_hands: float = Field(
+        0.4,
+        gt=0,
+        description="Squat: hands within this of shoulder height (bar on back); deadlift: not this over hips",
+    )
+    squat_bottom: float = Field(
+        0.45, ge=0, lt=1, description="Squat: hip-to-knee gap at the bottom, share of standing"
+    )
+    deadlift_bottom: float = Field(
+        0.45,
+        ge=0,
+        lt=1,
+        description="Deadlift: shoulders' height above the hips at the bottom, share of upright",
+    )
+    bench_bottom: float = Field(
+        0.2,
+        ge=0,
+        lt=1,
+        description="Bench: hands' height above the shoulders at the bottom, share of the top",
+    )
+    bench_flat: float = Field(
+        0.5, gt=0, description="Bench: shoulders within this of hip height (torso lengths) = lying"
+    )
+    bench_arms_up: float = Field(
+        0.3, description="Bench: hands this far above the shoulders to start a set (bar unracked)"
+    )
+    rep_low: float = Field(
+        0.3, ge=0, le=1, description="Squat / deadlift / bench: progress below this = the bottom"
+    )
+    rep_high: float = Field(0.9, ge=0, le=1, description="... back above this = one rep")
+    bag_speed: float = Field(
+        2.5, gt=0, description="Punching bag: a hand faster than this (torso lengths/s) = hitting"
+    )
     rep_top: float = Field(
         0.95, gt=0, le=1, description="Rep progress counted as the top (a pause there isn't a struggle)"
     )
@@ -449,12 +482,16 @@ class Workout(_Strict):
     )
     struggle_tap: str = Field("cross", description="style triggers: mashed while a rep is stuck")
     struggle_hz: float = Field(8.0, gt=0, le=15, description="Mash rate (rule 8 caps presses at ~15 Hz)")
+    bag_tap: str = Field("square", description="style triggers, punching bag: mashed while you hit")
+    bag_hz: float = Field(
+        8.0, gt=0, le=15, description="Punching bag mash rate (rule 8 caps presses at ~15 Hz)"
+    )
     exit_tap: str | None = Field(
         "circle", description="style triggers: tapped when the set ends (GTA 6: let go of the bar / stop)"
     )
     modes: list[str] = Field(default_factory=lambda: ["on_foot"], description="Game modes it works in")
 
-    @field_validator("tap", "struggle_tap", "exit_tap")
+    @field_validator("tap", "struggle_tap", "exit_tap", "bag_tap")
     @classmethod
     def _button(cls, v: str | None) -> str | None:
         if v is not None and v not in BUTTON_OUTPUTS:

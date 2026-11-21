@@ -89,10 +89,19 @@ default, or `--pad dualsense`) with the buttons the body presses lit up. To keep
 to a windowed game: `--window X,Y,W,H --on-top` (e.g. `--window 40,118,1500,844`).
 
 **GTA 6 fitness.** `uv run bodyctl webcam --game gta6`, then key **m** to the `fitness`
-mode and key **e** (or `--exercise`) to the station's exercise: pull-ups, push-ups or
-kettlebell swings. Each rep presses L2 + R2 harder as you go up, holds them at the top,
-releases them as you go down; X is mashed when you stall partway up, and circle is
-tapped when you stop (let go of the bar, put the kettlebell down).
+mode and key **e** (or `--exercise`) to the station's exercise. Each rep presses L2 + R2
+harder as you go up, holds them at the top, releases them as you go down; X is mashed
+when you stall partway up, and circle is tapped when the set ends.
+
+| Exercise | Set starts | Set ends (circle) | Camera |
+|---|---|---|---|
+| pull-ups | both hands up on the bar | let go of the bar | sees hands to hips |
+| push-ups | hands on the floor | stand up | side-on, low |
+| kettlebell | both hands together, low | hands apart | front |
+| squat | hands at shoulder height (bar on your back); the bar is lifted off the rack at once | hands down | front |
+| deadlift | hands at or below the hips | put the bar down, then raise your hands | front |
+| bench | lying with your arms up (bar lifted off at once) | sit up | side-on |
+| bag | always (no reps): square is mashed while a hand moves fast | no circle | front |
 
 **Real controller alongside the body.** Games that read one controller (GTA V on PC reads
 controller slot 1 only) need the virtual pad in slot 1: turn your real controller off,

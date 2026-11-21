@@ -107,7 +107,9 @@ modes:
 # partway up (the game asks for X on tired reps, near the end of a set).
 # Kettlebell swings (SOULEVER / ABAISSER / POSER): the same, with hands-together swings
 # from the knees to the chest; fitness mode only. Key e on the dashboard (or --exercise)
-# picks the station's exercise so only that one is looked for.
+# picks the station's exercise so only that one is looked for. Squats and bench start on
+# the rack (SOULEVER lifts the bar off, RANGER racks it); deadlifts start on the floor
+# (POSER puts it down); the punching bag is square mashed while you hit.
 tier0:
   weapon_wheel: {hold: l1, select: right_stick}
   cover: {tap: r1}
