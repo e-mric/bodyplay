@@ -100,15 +100,20 @@ modes:
 # Crouch down to take cover (R1 / RB, a toggle), stand up to leave it.
 # In a plane or helicopter (mode heli), spread your arms like wings to fly: tilt them
 # to roll, raise both hands for nose up, lower them for nose down (rule 4 exception).
-# GTA 6 fitness (mode fitness, key m on the dashboard): push-ups and pull-ups press
-# L2 + R2 harder as the rep goes up, release at the top, press again from the bottom;
-# when a rep stalls partway up (the character struggles), X is mashed.
+# GTA 6 fitness (mode fitness, key m on the dashboard), read off the game 2026-11-21:
+# "SE HISSER" = L2 + R2, pressed harder as the rep goes up and held at the top;
+# "DESCENDRE" = release them to go down; pressed again from the bottom. "RELACHER" =
+# circle (let go of the bar): tapped when the set ends. X is mashed when a rep stalls
+# partway up (the game asks for X on tired reps, near the end of a set).
+# Kettlebell swings (SOULEVER / ABAISSER / POSER): the same, with hands-together swings
+# from the knees to the chest; fitness mode only. Key e on the dashboard (or --exercise)
+# picks the station's exercise so only that one is looked for.
 tier0:
   weapon_wheel: {hold: l1, select: right_stick}
   cover: {tap: r1}
   flight: {stick: left_stick}
   aim_nudge: {stick: right_stick}   # while aiming, move the aiming hand to steer the crosshair
-  workout: {style: triggers, triggers: [l2, r2], struggle_tap: cross, modes: [fitness]}
+  workout: {style: triggers, triggers: [l2, r2], struggle_tap: cross, exit_tap: circle, modes: [fitness]}
 
 # Left to the DualSense: R1 cover / handbrake, L3 stealth / horn, L1 weapon wheel,
 # D-pad phone, R3 look behind, aircraft yaw and landing gear, menus.

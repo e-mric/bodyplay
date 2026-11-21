@@ -37,6 +37,9 @@ EXPECT: dict[str, tuple[str, float]] = {
     "get_up": ("workout_end", 3.0),
     "hang": ("workout_start", 4.0),
     "pullup": ("pullup", 3.5),
+    "kb_ready": ("workout_start", 4.0),
+    "swing": ("kettlebell", 3.0),
+    "put_down": ("workout_end", 3.0),
     "drop": ("workout_end", 3.0),
     "run": ("run_start", 2.0),
     "stop": ("run_stop", 3.0),
@@ -68,8 +71,11 @@ FLY_TEXT = {
     "nose_down": "NOSE DOWN: lower both hands",
 }
 EARLY_S = 0.3
-MOVES = ("run", "walk", "jump", "crouch", "lean", "punch", "aim", "shoot", "wheel", "fly", "pushup", "pullup")
-WORKOUT_MOVES = ("pushup", "pullup")  # need the floor or a bar: not part of "all"
+MOVES = (
+    "run", "walk", "jump", "crouch", "lean", "punch", "aim", "shoot", "wheel", "fly",
+    "pushup", "pullup", "kettlebell",
+)  # fmt: skip
+WORKOUT_MOVES = ("pushup", "pullup", "kettlebell")  # need the floor, a bar or the gym: not part of "all"
 
 # Where the camera sits relative to you while you face the screen: yaw in degrees,
 # + = camera off to your right. Record drills at several so gestures work from any of them.
@@ -168,6 +174,10 @@ def _reps(move: str, reps: int) -> list[Step]:
             s += [Step("hang", "HANG from the bar, arms straight", 5.0)] if i == 0 else []
             s.append(Step("pullup", "PULL-UP: chin over the bar", 3.5))
             s += [Step("drop", "DROP down and stand", 4.0)] if i == reps - 1 else []
+        elif move == "kettlebell":  # one set: grab, `reps` swings, put it down (fitness mode)
+            s += [Step("kb_ready", "GRAB IT: both hands together, low", 4.0)] if i == 0 else []
+            s.append(Step("swing", "SWING up to your chest, then back down", 3.0))
+            s += [Step("put_down", "PUT IT DOWN: hands apart", 4.0)] if i == reps - 1 else []
         elif move == "aim":
             s += [Step("aim", "AIM and hold", 2.5), Step("aim_down", "arm DOWN", 2.5)]
         else:
@@ -188,6 +198,7 @@ HOW = {
     "fly": "FLY: spread your arms like wings, tilt them to roll, raise or lower them to pitch",
     "pushup": "PUSH-UPS: camera low, your whole body in view on the floor",
     "pullup": "PULL-UPS: hang from the bar, camera sees hands to hips",
+    "kettlebell": "KETTLEBELL: hands together, hinge, swing them up to chest height",
 }
 
 
@@ -527,7 +538,8 @@ def run_drill(
             "complete": False,
         }
     )
-    gestures = WebcamGestures(prof.gestures)
+    fitness = [m for m in moves if m == "kettlebell"]
+    gestures = WebcamGestures(prof.gestures, fitness=bool(fitness), exercise=fitness[0] if fitness else "")
     # What the profile presses: shown on the controller picture, and sent to the game
     # only when the caller passes a real gamepad (webcam-drill --play).
     if gamepad is None:
@@ -636,6 +648,8 @@ def run_drill(
                     detections.append((t, e.name, e.name in expected))
             flying = step.label in FLY or step.label in ("wings", "land")
             mode = "heli" if flying and prof.mode_for("heli") is not None else "on_foot"
+            if gestures.fitness and prof.mode_for("fitness") is not None:
+                mode = "fitness"
             if mode != engine.mode:
                 engine.set_mode(mode, t)
             engine.apply(gestures.state, events, t)
@@ -695,6 +709,7 @@ START_LABELS = (
     "aim",
     "pushup",
     "pullup",
+    "swing",
 )
 
 

@@ -88,6 +88,12 @@ The dashboard looks like the drill window and shows the controller (`--pad xbox`
 default, or `--pad dualsense`) with the buttons the body presses lit up. To keep it next
 to a windowed game: `--window X,Y,W,H --on-top` (e.g. `--window 40,118,1500,844`).
 
+**GTA 6 fitness.** `uv run bodyctl webcam --game gta6`, then key **m** to the `fitness`
+mode and key **e** (or `--exercise`) to the station's exercise: pull-ups, push-ups or
+kettlebell swings. Each rep presses L2 + R2 harder as you go up, holds them at the top,
+releases them as you go down; X is mashed when you stall partway up, and circle is
+tapped when you stop (let go of the bar, put the kettlebell down).
+
 **Real controller alongside the body.** Games that read one controller (GTA V on PC reads
 controller slot 1 only) need the virtual pad in slot 1: turn your real controller off,
 start `bodyctl webcam`, then turn it back on. It lands in slot 2 and Bodyplay merges it

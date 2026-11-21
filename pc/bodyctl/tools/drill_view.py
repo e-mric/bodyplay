@@ -422,7 +422,10 @@ def _status(st) -> str:
     """The one body state worth showing next to TRACKED."""
     workout = getattr(st, "workout", "")
     if workout:
-        return f"{'PUSH' if workout == 'pushup' else 'PULL'}-UPS {st.workout_reps}"
+        name = {"pushup": "PUSH-UPS", "pullup": "PULL-UPS", "kettlebell": "SWINGS"}.get(
+            workout, workout.upper()
+        )
+        return f"{name} {st.workout_reps}"
     if getattr(st, "flying", False):
         return "FLYING"
     if getattr(st, "wheel_open", False):

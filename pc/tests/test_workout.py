@@ -212,7 +212,7 @@ def fitness_reports(frames: Frames):
     prof = load_profile(GTA6)
     gp = Gamepad(DryRunBackend(), prof.press.hold_ms, prof.press.release_ms)
     engine = BindingEngine(prof, gp, mode="fitness")
-    g = WebcamGestures(prof.gestures)
+    g = WebcamGestures(prof.gestures, fitness=True)
     out = []
     for p in frames.poses():
         events = g.update(p)
@@ -221,17 +221,23 @@ def fitness_reports(frames: Frames):
     return out
 
 
-def test_gta6_pullups_press_l2_r2_up_the_rep_and_release_at_the_top():
+def test_gta6_pullups_press_up_hold_at_the_top_release_going_down():
     rows = fitness_reports(pullup_set(3))
     pressed = [(t, r, p) for t, r, p in rows if r.l2 > 0]
     assert pressed and all(r.l2 == r.r2 for _, r, _ in pressed)  # both triggers together
-    assert all(abs(r.l2 - p) < 1e-6 and p < 1.0 for _, r, p in pressed)  # pressure = how far up the rep
+    assert all(abs(r.l2 - p) < 1e-6 for _, r, p in pressed)  # pressure = how far up the rep
     tops = [r for _, r, p in rows if p >= 1.0]
-    assert tops and all(r.l2 == 0.0 for r in tops)  # let go at the top
+    assert tops and all(r.l2 == 1.0 for r in tops)  # held at the top (the game shows DESCENDRE)
+    # Released only while going down: every pressed->released edge happens below the top.
+    releases = [p for (_, a, _), (_, b, p) in zip(rows, rows[1:], strict=False) if a.l2 > 0 and b.l2 == 0]
+    assert releases and all(p < 1.0 for p in releases)
     # Pressed again from the bottom for every rep: one real press (past half pressure) per rep.
     starts = sum(1 for (_, a, _), (_, b, _) in zip(rows, rows[1:], strict=False) if b.l2 >= 0.5 > a.l2)
     assert starts == 3
     assert not any("cross" in r.buttons for _, r, _ in rows)  # no struggle
+    circles = sum(1 for (_, a, _), (_, b, _) in zip(rows, rows[1:], strict=False)
+                  if "circle" in b.buttons and "circle" not in a.buttons)  # fmt: skip
+    assert circles == 1  # let go of the bar once, at the end (RELACHER)
 
 
 def test_gta6_stuck_rep_mashes_x():
@@ -254,3 +260,50 @@ def test_gta6_stuck_rep_mashes_x():
 def test_gta5_workout_still_taps():
     prof = load_profile("config/profiles/gta5.yaml")
     assert prof.tier0.workout.style == "tap" and prof.tier0.workout.modes == ["on_foot"]
+
+
+def swing_pose(height: float) -> np.ndarray:
+    """Standing, both hands together on a kettlebell handle: height 0 = at the knees
+    (bottom of the swing), 1 = at shoulder height (top)."""
+    img, _ = standing()
+    knee_y, sh_y = img[W.L_KNEE, 1], img[W.L_SHOULDER, 1]
+    y = knee_y + height * (sh_y - knee_y)
+    img[W.L_WRIST, :2], img[W.R_WRIST, :2] = (330, y), (310, y)
+    img[W.L_ELBOW, :2], img[W.R_ELBOW, :2] = (345, (y + sh_y) / 2), (295, (y + sh_y) / 2)
+    return img
+
+
+def swing_set(n: int = 3) -> Frames:
+    f, stand = Frames(), standing()[0]
+    f.hold(stand, 1.0)
+    f.blend(stand, swing_pose(0.0), 0.5)  # grab it
+    f.hold(swing_pose(0.0), 0.8)
+    f.reps(swing_pose, 0.0, 1.0, n)  # from the bottom: hands up to the chest and back, 1.6 s each
+    f.blend(swing_pose(0.0), stand, 0.5)  # put it down
+    f.hold(stand, 2.0)
+    return f
+
+
+def test_kettlebell_swings_count_only_in_fitness_mode():
+    f = swing_set(3)
+    events, _ = run(f)  # normal play: hands together in front are nothing special
+    assert not {"workout_start", "kettlebell"} & {n for n, _ in events}
+    rows = fitness_reports(f)
+    pressed = [(r, p) for _, r, p in rows if r.l2 > 0]
+    assert pressed and all(abs(r.l2 - p) < 1e-6 for r, p in pressed)  # pressure = hand height
+    starts = sum(1 for (_, a, _), (_, b, _) in zip(rows, rows[1:], strict=False) if b.l2 >= 0.5 > a.l2)
+    assert starts == 3  # one swing up per rep (SOULEVER), held at the top, released going down
+    circles = sum(1 for (_, a, _), (_, b, _) in zip(rows, rows[1:], strict=False)
+                  if "circle" in b.buttons and "circle" not in a.buttons)  # fmt: skip
+    assert circles == 1  # put it down (POSER)
+
+
+def test_kettlebell_reps_and_tier0_fitness_mode():
+    from bodyctl.output.gamepad import DryRunBackend, Gamepad
+    from bodyctl.tier0 import Tier0
+
+    prof = load_profile(GTA6)
+    app = Tier0(prof, Gamepad(DryRunBackend(), 30, 30), clock=lambda: 0)
+    app.engine.set_mode("fitness", 0)
+    names = [e.name for p in swing_set(4).poses() for e in app.step(p.t_us, p, t_pose_us=p.t_us).events]
+    assert names.count("workout_start") == 1 and names.count("kettlebell") == 4

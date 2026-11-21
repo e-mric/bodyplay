@@ -21,6 +21,7 @@ from bodyctl.sensors.webcam_pose import now_us
 from bodyctl.tools.stats import StageStats
 
 MODE_CYCLE = ("on_foot", "car", "heli", "swim", "qte", "fitness")
+EXERCISES = ("", "pushup", "pullup", "kettlebell")  # fitness mode, key e ("" = any)
 
 
 @dataclass
@@ -44,6 +45,7 @@ class Tier0:
 
     def step(self, t_capture_us: int, pose: Pose | None, t_pose_us: int | None = None) -> FrameResult:
         t_pose_us = t_pose_us if t_pose_us is not None else self.clock()
+        self.gestures.fitness = self.mode == "fitness"
         events = self.gestures.update(pose)
         t_gesture = self.clock()
         self.engine.apply(self.gestures.state, events, t_gesture)
@@ -62,6 +64,10 @@ class Tier0:
         modes = [m for m in MODE_CYCLE if self.profile.mode_for(m) is not None]
         i = modes.index(self.mode) if self.mode in modes else -1
         self.engine.set_mode(modes[(i + 1) % len(modes)], self.clock())
+
+    def cycle_exercise(self) -> None:
+        i = EXERCISES.index(self.gestures.exercise) if self.gestures.exercise in EXERCISES else 0
+        self.gestures.exercise = EXERCISES[(i + 1) % len(EXERCISES)]
 
     def toggle_pause(self) -> None:
         if self.mode == "paused" and self._paused_from:
@@ -84,6 +90,7 @@ def run_webcam(
     window: tuple[int, int, int, int] | None = None,
     topmost: bool = False,
     pad: str = "xbox",
+    exercise: str = "",
 ) -> int:
     from bodyctl.sensors.webcam_pose import Camera, open_pose
     from bodyctl.tools.dashboard import Dashboard
@@ -97,6 +104,7 @@ def run_webcam(
         cleanup.callback(cam.close)
         print(f"camera {camera_index}: {cam.size[0]}x{cam.size[1]} @ {cam.fps:.0f} fps; Ctrl+C or q to quit")
         app = Tier0(profile, gamepad)
+        app.gestures.exercise = exercise
         dash = Dashboard(rect=window, topmost=topmost, pad_kind=pad) if show else None
         if dash:
             cleanup.callback(dash.close)
@@ -132,6 +140,8 @@ def run_webcam(
                         app.toggle_pause()
                     elif key == ord("r"):
                         app.stats.reset()
+                    elif key == ord("e"):
+                        app.cycle_exercise()
                 else:
                     for e in res.events:
                         if e.name != "step":

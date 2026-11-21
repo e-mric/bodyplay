@@ -80,7 +80,9 @@ class Dashboard:
         else:
             title, style = mode_name, "idle"
         sub = [f"MODE {mode_name}"] + ([] if state.visible else ["OUT OF VIEW"])
-        sub.append("m mode  p pause  r reset  q quit")
+        if mode == "fitness":
+            sub.append("EXERCISE " + (getattr(state, "exercise_name", "") or "ANY"))
+        sub.append("m mode  e exercise  p pause  r reset  q quit")
         latency = [line.strip() for line in stats_text.splitlines() if line.startswith("frame->output")]
         panel = V.Panel(
             header=f"LIVE  {mode_name}",

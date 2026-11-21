@@ -182,7 +182,7 @@ class WebcamParams(_Strict):
     )
     fly_pitch_full: float = Field(0.6, gt=0, description="Hand height for full pitch")
     plank_hip: float = Field(
-        0.35,
+        0.45,
         gt=0,
         description="Push-ups: hands below the hips by this share of their drop below the shoulders = on "
         "the floor (standing ~0, plank 0.5 and up)",
@@ -207,8 +207,18 @@ class WebcamParams(_Strict):
         0.85, gt=0, le=1, description="Push-up: back above this share of the top = one rep"
     )
     pushup_top_window_ms: int = Field(3000, gt=0, description="Push-up: the top is the highest in this long")
+    swing_hands_together: float = Field(
+        0.35, gt=0, description="Kettlebell (fitness mode): wrists this close (torso lengths) start a set"
+    )
+    swing_hands_apart: float = Field(
+        0.6, gt=0, description="Kettlebell: wrists further apart than this end it"
+    )
+    swing_low: float = Field(
+        0.25, description="Kettlebell: hands below this (0 knees .. 1 shoulders) = bottom"
+    )
+    swing_high: float = Field(0.85, description="Kettlebell: hands above this after the bottom = one swing")
     rep_top: float = Field(
-        0.95, gt=0, le=1, description="Rep progress counted as the top (where a held-press workout lets go)"
+        0.95, gt=0, le=1, description="Rep progress counted as the top (a pause there isn't a struggle)"
     )
     rep_move_speed: float = Field(
         0.3, gt=0, description="Rep progress per second that counts as moving up or down (not pausing)"
@@ -428,8 +438,9 @@ class Workout(_Strict):
     """Push-ups and pull-ups for in-game workouts.
 
     style tap: one button tap per rep. style triggers (GTA 6 fitness): the triggers are
-    pressed harder as the rep goes up, released at the top and pressed again from the
-    bottom; while a rep is stuck partway up, `struggle_tap` is mashed."""
+    pressed harder as the rep goes up and held at the top, released as you go down and
+    pressed again from the bottom; while a rep is stuck partway up, `struggle_tap` is
+    mashed; when the set ends (you let go of the bar, stand up), `exit_tap` is tapped."""
 
     style: Literal["tap", "triggers"] = Field("tap", description="tap per rep, or held triggers (GTA 6)")
     tap: str = Field("cross", description="style tap: tapped once per push-up or pull-up rep")
@@ -438,12 +449,15 @@ class Workout(_Strict):
     )
     struggle_tap: str = Field("cross", description="style triggers: mashed while a rep is stuck")
     struggle_hz: float = Field(8.0, gt=0, le=15, description="Mash rate (rule 8 caps presses at ~15 Hz)")
+    exit_tap: str | None = Field(
+        "circle", description="style triggers: tapped when the set ends (GTA 6: let go of the bar / stop)"
+    )
     modes: list[str] = Field(default_factory=lambda: ["on_foot"], description="Game modes it works in")
 
-    @field_validator("tap", "struggle_tap")
+    @field_validator("tap", "struggle_tap", "exit_tap")
     @classmethod
-    def _button(cls, v: str) -> str:
-        if v not in BUTTON_OUTPUTS:
+    def _button(cls, v: str | None) -> str | None:
+        if v is not None and v not in BUTTON_OUTPUTS:
             raise ValueError(f"workout must tap a button, one of {sorted(BUTTON_OUTPUTS)}")
         return v
 

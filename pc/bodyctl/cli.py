@@ -113,6 +113,7 @@ def cmd_webcam(args: argparse.Namespace) -> int:
         window=tuple(int(v) for v in args.window.split(",")) if args.window else None,
         topmost=args.on_top,
         pad=args.pad,
+        exercise=args.exercise,
     )
 
 
@@ -531,6 +532,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--game",
         help="play another game's controls (config/profiles/<game>.yaml, e.g. gta6) with these thresholds",
     )
+    sp.add_argument(
+        "--exercise",
+        choices=["", "pushup", "pullup", "kettlebell"],
+        default="",
+        help="fitness mode: the exercise to look for (key e cycles them; default any)",
+    )
     sp.add_argument("--pose", choices=["auto", "mediapipe", "rtmpose"], default="auto", help=pose_help)
     sp.add_argument(
         "--backend",
@@ -576,10 +583,11 @@ def build_parser() -> argparse.ArgumentParser:
             "fly",
             "pushup",
             "pullup",
+            "kettlebell",
             "all",
         ],
         metavar="MOVE",
-        help="moves to drill; all = every standing move (pushup and pullup only when named)",
+        help="moves to drill; all = every standing move (pushup, pullup, kettlebell only when named)",
     )
     sp.add_argument("--reps", type=int, default=8, help="repetitions of each move")
     sp.add_argument(

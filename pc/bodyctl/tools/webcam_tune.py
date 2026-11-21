@@ -82,7 +82,7 @@ GROUPS: dict[str, tuple[tuple[str, ...] | None, dict[str, list[float]]]] = {
         {"webcam.fly_span": [1.5, 2.0, 2.5, 3.0], "webcam.fly_hold_ms": [150, 300, 500]},
     ),
     "workout": (
-        ("workout_start", "workout_end", "pushup", "pullup"),
+        ("workout_start", "workout_end", "pushup", "pullup", "kettlebell"),
         {
             "webcam.plank_hip": [0.25, 0.35, 0.5],
             "webcam.hang_reach": [0.3, 0.5, 0.7],

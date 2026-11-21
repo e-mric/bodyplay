@@ -13,6 +13,9 @@ from typing import Protocol
 from bodyctl.config.profile import Binding, PortType, Profile
 from bodyctl.output.gamepad import Gamepad
 
+# Workout reps (one event each): tapped by tier0.workout style tap.
+REP_EVENTS = ("pushup", "pullup", "kettlebell")
+
 # Gesture events that drive pulse bindings.
 PULSE_EVENTS = {"step_rhythm": "step", "stroke_rhythm": "step", "fast_feet": "step"}
 
@@ -80,9 +83,11 @@ class BindingEngine:
         if workout is not None and self._in_modes(workout.modes):
             if workout.style == "tap":
                 for name in events:
-                    if name in ("pushup", "pullup"):
+                    if name in REP_EVENTS:
                         gp.press(workout.tap, now_us)
-            elif state.condition("working_out"):
+            elif workout.exit_tap and "workout_end" in events:
+                gp.press(workout.exit_tap, now_us)  # GTA 6: let go of the bar / stop
+            if workout.style == "triggers" and state.condition("working_out"):
                 # Overrides the ports' triggers during a set (nobody aims mid push-up).
                 for trigger in workout.triggers:
                     gp.set_trigger(trigger, state.source("workout_press"))
