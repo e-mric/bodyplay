@@ -654,7 +654,9 @@ def run_drill(
             panel = V.Panel("CAMERA SETUP", checks=checks)
             key = keys(V.render(f, pose, title, sub, style, None, panel, hud, show_skeleton))
             if key == ord("q"):
-                return None
+                unmet = [text for text, ok in checks if not ok]
+                print("quit during camera setup" + (": " + "; ".join(unmet) if unmet else ""))
+                raise KeyboardInterrupt
             if key == ord(" "):
                 break
 
@@ -726,7 +728,8 @@ def run_drill(
         cam.close()
         estimator.close()
 
-    if not len(rec):
+    if not len(rec):  # quit before the drill started: keep no empty video
+        path.with_suffix(".mp4").unlink(missing_ok=True)
         cv2.destroyAllWindows()
         return None
     recording = rec.build()
