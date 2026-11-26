@@ -207,11 +207,20 @@ class WebcamParams(_Strict):
         0.85, gt=0, le=1, description="Push-up: back above this share of the top = one rep"
     )
     pushup_top_window_ms: int = Field(3000, gt=0, description="Push-up: the top is the highest in this long")
-    swing_hands_together: float = Field(
-        0.35, gt=0, description="Kettlebell (fitness mode): wrists this close (torso lengths) start a set"
+    swing_grab: float = Field(
+        0.45,
+        description="Kettlebell (fitness mode): hands this far below the hips (torso lengths) start a set",
+    )
+    body_scale_decay: float = Field(
+        0.1,
+        ge=0,
+        le=1,
+        description="Workouts: the body scale (recent tallest torso) forgets this share per second",
     )
     swing_hands_apart: float = Field(
-        0.6, gt=0, description="Kettlebell: wrists further apart than this end it"
+        0.6,
+        gt=0,
+        description="Kettlebell: wrists within this (torso lengths) = on the handle; further apart ends it",
     )
     swing_low: float = Field(
         0.25, description="Kettlebell: hands below this (0 knees .. 1 shoulders) = bottom"
@@ -222,6 +231,11 @@ class WebcamParams(_Strict):
         gt=0,
         description="Squat: hands within this of shoulder height (bar on back); deadlift: not this over hips",
     )
+    squat_start_thigh: float = Field(
+        0.45,
+        gt=0,
+        description="Squat: hip-to-knee gap (torso lengths) needed to start a set, standing tall at the rack",
+    )
     squat_bottom: float = Field(
         0.45, ge=0, lt=1, description="Squat: hip-to-knee gap at the bottom, share of standing"
     )
@@ -230,6 +244,12 @@ class WebcamParams(_Strict):
         ge=0,
         lt=1,
         description="Deadlift: shoulders' height above the hips at the bottom, share of upright",
+    )
+    deadlift_hinge_ratio: float = Field(
+        0.8,
+        gt=0,
+        le=1,
+        description="Auto exercise detection: shoulder-to-hip vertical gap below this torso share = hinged",
     )
     bench_bottom: float = Field(
         0.2,
@@ -249,6 +269,32 @@ class WebcamParams(_Strict):
     rep_high: float = Field(0.9, ge=0, le=1, description="... back above this = one rep")
     bag_speed: float = Field(
         2.5, gt=0, description="Punching bag: a hand faster than this (torso lengths/s) = hitting"
+    )
+    bag_refractory_ms: int = Field(
+        180, ge=0, description="Punching bag: minimum time between counted punches"
+    )
+    bag_min_travel: float = Field(
+        0.18, gt=0, description="Punching bag: minimum wrist travel from rest before a punch counts"
+    )
+    bag_rest_speed: float = Field(
+        0.8, gt=0, description="Punching bag: maximum wrist speed considered settled for re-arming"
+    )
+    bag_rearm_ms: int = Field(
+        150,
+        ge=0,
+        description="Punching bag: an arm settled this long can punch again (else: back halfway)",
+    )
+    bag_extension_min: float = Field(
+        0.82, gt=0, le=1, description="Punching bag: arm extension ratio that can count as a forward punch"
+    )
+    bag_extension_delta: float = Field(
+        0.18, gt=0, le=1, description="Punching bag: extension increase from guard needed for a forward punch"
+    )
+    bag_rearm_extension: float = Field(
+        0.70,
+        gt=0,
+        le=1,
+        description="Punching bag: a punched arm bent back under this (by bag_extension_delta) re-arms",
     )
     rep_top: float = Field(
         0.95, gt=0, le=1, description="Rep progress counted as the top (a pause there isn't a struggle)"

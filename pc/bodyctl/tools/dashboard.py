@@ -91,6 +91,7 @@ class Dashboard:
             pad=latency,
             report=report,
             pad_kind=self.pad_kind,
+            fitness=mode == "fitness",
         )
         out = V.render(frame, pose, title, "   ".join(sub), style, None, panel, hud)
         if self.flash_corner:

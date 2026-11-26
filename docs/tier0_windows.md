@@ -88,17 +88,21 @@ The dashboard looks like the drill window and shows the controller (`--pad xbox`
 default, or `--pad dualsense`) with the buttons the body presses lit up. To keep it next
 to a windowed game: `--window X,Y,W,H --on-top` (e.g. `--window 40,118,1500,844`).
 
-**GTA 6 fitness.** `uv run bodyctl webcam --game gta6`, then key **m** to the `fitness`
-mode and key **e** (or `--exercise`) to the station's exercise. Each rep presses L2 + R2
-harder as you go up, holds them at the top, releases them as you go down; X is mashed
-when you stall partway up, and circle is tapped when the set ends.
+**GTA 6 fitness.** `uv run bodyctl webcam --game gta6` starts in `fitness` mode and
+tries to recognize the exercise from the pose (AUTO): push-ups, pull-ups, kettlebell swings,
+squats, deadlifts and bench. Set `--exercise` or press **e** to pin one when postures
+overlap; the punching bag must be picked (`--exercise bag`), since a punch looks like any
+arm movement. These automatic paths still need live calibration per exercise. Each lift
+rep presses L2 + R2 harder as you go up, holds them at the top, releases them as you go
+down; X is mashed when you stall partway up, and circle is tapped when the set ends.
+Boxing sends Square (virtual Xbox X) on each detected punch.
 
 | Exercise | Set starts | Set ends (circle) | Camera |
 |---|---|---|---|
 | pull-ups | both hands up on the bar | let go of the bar | sees hands to hips |
 | push-ups | hands on the floor | stand up | side-on, low |
 | kettlebell | both hands together, low | hands apart | front |
-| squat | hands at shoulder height (bar on your back); the bar is lifted off the rack at once | hands down | front |
+| squat | stand tall with feet shoulder-width apart, hands at shoulder height (bar on your back); the bar is lifted off the rack at once | hands down | front |
 | deadlift | hands at or below the hips | put the bar down, then raise your hands | front |
 | bench | lying with your arms up (bar lifted off at once) | sit up | side-on |
 | bag | always (no reps): square is mashed while a hand moves fast | no circle | front |
@@ -125,13 +129,19 @@ uv run bodyctl webcam-drill jump --reps 5
 ```
 
 Moves: `run`, `walk`, `jump`, `crouch`, `lean`, `punch`, `aim`, `shoot`, `wheel`, `fly`, or `all`, plus
-`pushup` and `pullup` (only when named: they need the floor or a bar; `--reps` is the
-reps in one set). `walk` cues walk, jog, then sprint in place; `webcam-tune` sets the profile's `cadence_curve` (steps/s
-for half stick, full stick and sprint taps) from your own pace. Before each
+`pushup`, `pullup`, `kettlebell`, and `squat` (only when named: they need the floor, a bar,
+or a gym station; `--reps` is the reps in one set). These workout drills replay in GTA 6
+fitness mode during scoring and tuning. The current focus is kettlebell, squats, and
+pull-ups; they can be cued together, with the drill switching the selected exercise at
+each set. `walk` cues walk, jog, then sprint in place; `webcam-tune` sets the profile's
+`cadence_curve` (steps/s for half stick, full stick and sprint taps) from your own pace. Before each
 recording, a setup screen guides the camera: whole body in view, distance, camera
 level, and the camera angle. Always face the screen and move the camera. To make
 gestures work wherever the camera ends up, record from several angles:
 `--angles front,right30,left30` (also `right45`, `left45`).
+
+Record the three current focus exercises in one session with:
+`uv run bodyctl webcam-drill kettlebell squat pullup --reps 5 --angles front,right45 --video`.
 
 Add `--play` to also press the buttons in the game while you drill (virtual pad, with the
 same slot rule as above; `--window X,Y,W,H --on-top` keeps the drill next to the game), so

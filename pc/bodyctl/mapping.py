@@ -87,16 +87,17 @@ class BindingEngine:
                         gp.press(workout.tap, now_us)
             elif workout.exit_tap and "workout_end" in events and state.condition("exit_after_set"):
                 gp.press(workout.exit_tap, now_us)  # GTA 6: let go of the bar / stop
-            if workout.style == "triggers" and state.condition("working_out"):
-                # Overrides the ports' triggers during a set (nobody aims mid push-up).
-                for trigger in workout.triggers:
-                    gp.set_trigger(trigger, state.source("workout_press"))
-                last = self._last_pulse_us.get("workout_struggle")
-                if state.condition("workout_struggling") and (
-                    last is None or now_us - last >= 1e6 / workout.struggle_hz
-                ):
-                    self._last_pulse_us["workout_struggle"] = now_us
-                    gp.press(workout.struggle_tap, now_us)
+            if workout.style == "triggers":
+                if state.condition("working_out"):
+                    # Overrides the ports' triggers during a set (nobody aims mid push-up).
+                    for trigger in workout.triggers:
+                        gp.set_trigger(trigger, state.source("workout_press"))
+                    last = self._last_pulse_us.get("workout_struggle")
+                    if state.condition("workout_struggling") and (
+                        last is None or now_us - last >= 1e6 / workout.struggle_hz
+                    ):
+                        self._last_pulse_us["workout_struggle"] = now_us
+                        gp.press(workout.struggle_tap, now_us)
                 last = self._last_pulse_us.get("workout_bag")
                 if state.condition("bag_hitting") and (last is None or now_us - last >= 1e6 / workout.bag_hz):
                     self._last_pulse_us["workout_bag"] = now_us

@@ -94,6 +94,7 @@ docs/                  plans
 - Whether Remote Play input coexists with local controllers (affects the side path).
 - Tier 0 on Windows: `vgamepad` needs ViGEmBus, archived upstream since 2023 but still installable; confirm chiaki-ng sees the virtual Xbox 360 pad in M2.
   GTA V on PC (2026-11-04) reads XInput slot 1 only: the virtual pad must take slot 1 (start it with the real controller off), and `bodyctl webcam` then merges the real controller in.
+  PS5 over Remote Play works (2026-11-21): GTA 6 on the PS5 followed the body through the virtual pad in Veyra 2.1.9 (a Remote Play client that takes any controller), with the Xbox controller connected alongside (`--no-passthrough`: Veyra reads both). chiaki-ng not tried yet.
 - Tier 1: whether chiaki-ng (SDL) recognizes the node's HID gamepad out of the box, or needs an `SDL_GAMECONTROLLERCONFIG` mapping string (M3).
 - GTA 6 controls and frame rate (known on 2026-11-19). Until then, develop and test on GTA V (PS5, Performance mode) with `config/profiles/gta5.yaml`.
   Known so far (2026-11-21): on-foot, vehicle and aircraft controls match GTA V; fitness (gym) reps hold L2 + R2, pressed harder on the way up, released at the top, re-pressed from the bottom, X mashed when the character struggles. `config/profiles/gta6.yaml` (mode `fitness`), `uv run bodyctl webcam --game gta6 [--exercise pushup|pullup|kettlebell|squat|deadlift|bench|bag]`. Read off gameplay videos 2026-11-21: L2+R2 held at the top (DESCENDRE / ABAISSER) and released to lower; circle (RELACHER / POSER) ends the set; X shows on tired reps.

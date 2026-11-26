@@ -40,6 +40,12 @@ EXPECT: dict[str, tuple[str, float]] = {
     "kb_ready": ("workout_start", 4.0),
     "swing": ("kettlebell", 3.0),
     "put_down": ("workout_end", 3.0),
+    "rack_squat": ("workout_start", 4.0),
+    "squat": ("squat", 3.5),
+    "rack_down": ("workout_end", 4.0),
+    "boxing_ready": ("workout_start", 4.0),
+    "jab": ("bag_hit", 2.0),
+    "cross": ("bag_hit", 2.0),
     "drop": ("workout_end", 3.0),
     "run": ("run_start", 2.0),
     "stop": ("run_stop", 3.0),
@@ -73,9 +79,25 @@ FLY_TEXT = {
 EARLY_S = 0.3
 MOVES = (
     "run", "walk", "jump", "crouch", "lean", "punch", "aim", "shoot", "wheel", "fly",
-    "pushup", "pullup", "kettlebell",
+    "pushup", "pullup", "kettlebell", "squat", "boxing",
 )  # fmt: skip
-WORKOUT_MOVES = ("pushup", "pullup", "kettlebell")  # need the floor, a bar or the gym: not part of "all"
+WORKOUT_MOVES = ("pushup", "pullup", "kettlebell", "squat", "boxing")  # gym or equipment drills
+# Fitness mode: the exercise each workout drill drives, and the cue that starts each set
+# (a drill of several workouts switches exercise there).
+EXERCISE = {
+    "pushup": "pushup",
+    "pullup": "pullup",
+    "kettlebell": "kettlebell",
+    "squat": "squat",
+    "boxing": "bag",
+}
+SET_CUES = {
+    "plank": "pushup",
+    "hang": "pullup",
+    "kb_ready": "kettlebell",
+    "rack_squat": "squat",
+    "boxing_ready": "bag",
+}
 
 # Where the camera sits relative to you while you face the screen: yaw in degrees,
 # + = camera off to your right. Record drills at several so gestures work from any of them.
@@ -178,6 +200,16 @@ def _reps(move: str, reps: int) -> list[Step]:
             s += [Step("kb_ready", "GRAB IT: both hands together, low", 4.0)] if i == 0 else []
             s.append(Step("swing", "SWING up to your chest, then back down", 3.0))
             s += [Step("put_down", "PUT IT DOWN: hands apart", 4.0)] if i == reps - 1 else []
+        elif move == "squat":  # one set: unrack, `reps` squats, rack it
+            setup = "SET UP: stand tall, feet shoulder-width, hands at shoulders like a bar"
+            s += [Step("rack_squat", setup, 4.0)] if i == 0 else []
+            s.append(Step("squat", "SQUAT: sit down, then stand tall", 3.5))
+            s += [Step("rack_down", "RACK: lower your hands", 4.0)] if i == reps - 1 else []
+        elif move == "boxing":  # the bag stays active; alternate straight punches, no set-ending tap
+            s += [Step("boxing_ready", "BOXING: face the bag, guard up", 4.0)] if i == 0 else []
+            label = "jab" if i % 2 == 0 else "cross"
+            text = "JAB: quick straight punch" if label == "jab" else "CROSS: quick punch with the other hand"
+            s.append(Step(label, text, 2.5))
         elif move == "aim":
             s += [Step("aim", "AIM and hold", 2.5), Step("aim_down", "arm DOWN", 2.5)]
         else:
@@ -199,6 +231,8 @@ HOW = {
     "pushup": "PUSH-UPS: camera low, your whole body in view on the floor",
     "pullup": "PULL-UPS: hang from the bar, camera sees hands to hips",
     "kettlebell": "KETTLEBELL: hands together, hinge, swing them up to chest height",
+    "squat": "SQUATS: stand tall, feet shoulder-width, hands at shoulders like a bar; squat and stand",
+    "boxing": "BOXING: stand at the bag and alternate quick straight punches",
 }
 
 
@@ -506,6 +540,7 @@ def run_drill(
     gamepad=None,
     window_rect: tuple[int, int, int, int] | None = None,
     topmost: bool = False,
+    game: str | None = None,
 ) -> Path | None:
     import cv2
 
@@ -518,6 +553,9 @@ def run_drill(
     from bodyctl.tools.webcam_tune import format_scores, match_cues, score
 
     prof = load_profile(profile_path)
+    if game:
+        game_profile = load_profile(Path("config/profiles") / f"{game}.yaml")
+        prof = game_profile.model_copy(update={"gestures": prof.gestures})
     script = build_script(moves, reps)
     target_yaw = ANGLES[angle]
     path = drill_path(out_dir, moves, angle)
@@ -534,17 +572,22 @@ def run_drill(
             "model": model,
             "pose": pose_name,
             "profile": Path(profile_path).as_posix(),
+            "game": game,
             "created": datetime.now().isoformat(timespec="seconds"),
             "complete": False,
         }
     )
-    fitness = [m for m in moves if m == "kettlebell"]
-    gestures = WebcamGestures(prof.gestures, fitness=bool(fitness), exercise=fitness[0] if fitness else "")
+    fitness = [m for m in moves if m in WORKOUT_MOVES]
+    gestures = WebcamGestures(
+        prof.gestures, fitness=bool(fitness), exercise=EXERCISE[fitness[0]] if fitness else ""
+    )
     # What the profile presses: shown on the controller picture, and sent to the game
     # only when the caller passes a real gamepad (webcam-drill --play).
     if gamepad is None:
         gamepad = Gamepad(DryRunBackend(), prof.press.hold_ms, prof.press.release_ms)
-    engine = BindingEngine(prof, gamepad)
+    engine = BindingEngine(
+        prof, gamepad, mode="fitness" if fitness and prof.mode_for("fitness") else "on_foot"
+    )
     beep = _Beeper(sound)
     writer = None
     if video:
@@ -628,6 +671,8 @@ def run_drill(
                 if i == len(script):
                     break
                 step = script[i]
+                if step.label in SET_CUES:
+                    gestures.exercise = SET_CUES[step.label]
                 t0, step_end = t, t + int(step.seconds * 1e6)
                 rec.cue(step.label, t0)
                 if step.is_action:
@@ -665,6 +710,7 @@ def run_drill(
                 tally=match_cues(rec.cues, [(td, n) for (td, n, _) in detections]),
                 report=gamepad.report,
                 pad_kind=pad,
+                fitness=gestures.fitness,
             )
             key = keys(V.render(f, pose, step.text, sub, style, progress, panel, hud, show_skeleton))
             if key == ord("q"):
@@ -710,6 +756,7 @@ START_LABELS = (
     "pushup",
     "pullup",
     "swing",
+    "squat",
 )
 
 

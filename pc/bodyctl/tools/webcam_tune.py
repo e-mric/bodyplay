@@ -23,8 +23,9 @@ import yaml
 from bodyctl.config.profile import Gestures, LeanParams, Profile
 from bodyctl.gestures import webcam as W
 from bodyctl.gestures.webcam import Pose, WebcamGestures, deadzone_map
-from bodyctl.tools.drill import FLY, LEAN, POINTS, SPEEDS, Cue, Recording, cue_windows
+from bodyctl.tools.drill import EXERCISE, FLY, LEAN, POINTS, SET_CUES, SPEEDS, Cue, Recording, cue_windows
 
+GYM_MOVES = ("kettlebell", "squat", "pullup", "boxing")  # GTA 6 gym drill move labels
 BASE_PROFILE = Path("config/profiles/gta5.yaml")
 TUNED_DIR = Path("data/profiles")
 DRILLS_DIR = Path("data/drills")
@@ -82,7 +83,7 @@ GROUPS: dict[str, tuple[tuple[str, ...] | None, dict[str, list[float]]]] = {
         {"webcam.fly_span": [1.5, 2.0, 2.5, 3.0], "webcam.fly_hold_ms": [150, 300, 500]},
     ),
     "workout": (
-        ("workout_start", "workout_end", "pushup", "pullup", "kettlebell"),
+        ("workout_start", "workout_end", "pushup", "pullup", "kettlebell", "squat"),
         {
             "webcam.plank_hip": [0.25, 0.35, 0.5],
             "webcam.hang_reach": [0.3, 0.5, 0.7],
@@ -96,6 +97,23 @@ GROUPS: dict[str, tuple[tuple[str, ...] | None, dict[str, list[float]]]] = {
     "pullup": (
         ("pullup",),
         {"webcam.pullup_top_deg": [70, 90, 110], "webcam.pullup_bottom_deg": [130, 140, 150, 160]},
+    ),
+    "squat": (
+        ("squat",),
+        {
+            "webcam.squat_bottom": [0.35, 0.45, 0.55, 0.65],
+            "webcam.rep_low": [0.2, 0.3, 0.4],
+            "webcam.rep_high": [0.8, 0.9, 0.95],
+        },
+    ),
+    "kettlebell": (
+        ("workout_start", "workout_end", "kettlebell"),
+        {
+            "webcam.swing_grab": [0.35, 0.45, 0.55],
+            "webcam.swing_hands_apart": [0.5, 0.6, 0.7],
+            "webcam.swing_low": [0.15, 0.25, 0.35],
+            "webcam.swing_high": [0.75, 0.85, 0.95],
+        },
     ),
     "wheel": (
         ("wheel_open", "wheel_close"),
@@ -167,13 +185,22 @@ class Replay:
 
 def replay(rec: Recording, gestures: Gestures, poses: list[Pose | None] | None = None) -> Replay:
     poses = poses if poses is not None else rec.poses()
-    g = WebcamGestures(gestures)
+    moves = rec.header.get("moves", [])
+    gym = [m for m in moves if m in GYM_MOVES]
+    fitness = rec.header.get("mode") == "fitness" or bool(gym)  # live --record: moves = [exercise]
+    first = gym[0] if gym else moves[0] if fitness and moves else ""
+    g = WebcamGestures(gestures, fitness=fitness, exercise=EXERCISE.get(first, first))
+    cue_i = 0
     events: list[tuple[int, str]] = []
     n = len(poses)
     lean = np.full(n, np.nan)
     cadence, stick, sprint = np.zeros(n), np.zeros(n), np.zeros(n, bool)
     wheel, fly = np.zeros((n, 3)), np.zeros((n, 3))
     for i, (t, p) in enumerate(zip(rec.t_us, poses, strict=True)):
+        while cue_i < len(rec.cues) and rec.cues[cue_i].t_us <= t:
+            if rec.cues[cue_i].label in SET_CUES:
+                g.exercise = SET_CUES[rec.cues[cue_i].label]
+            cue_i += 1
         events.extend((int(t), e.name) for e in g.update(p))
         st = g.state
         if st.visible:

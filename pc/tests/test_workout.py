@@ -420,3 +420,54 @@ def test_gta6_punching_bag_mashes_square_only_while_hitting():
                if "square" in b.buttons and "square" not in a.buttons]  # fmt: skip
     assert len(squares) >= 6 and all(1.4 < t < 3.3 for t in squares)  # while jabbing (1.5-3.0 s), not after
     assert edges(rows, "circle") == 0 and not any(r.l2 for _, r, _ in rows)  # no rep triggers, no POSER
+
+
+def test_gta6_fitness_mode_ignores_play_moves():
+    from posegen import Timeline
+
+    from bodyctl.output.gamepad import DryRunBackend, Gamepad
+    from bodyctl.tier0 import Tier0
+
+    tl = Timeline(8.0)
+    tl.run(1.0, 4.0, 3.0)
+    tl.jump(5.0)
+    tl.punch(6.5)
+    prof = load_profile(GTA6)
+    app = Tier0(prof, Gamepad(DryRunBackend(), 30, 30), clock=lambda: 0)
+    app.engine.set_mode("fitness", 0)
+    names = []
+    for p in tl.poses():
+        names += [e.name for e in app.step(p.t_us, p, t_pose_us=p.t_us).events]
+        r = app.gamepad.report
+        assert r.left == (0.0, 0.0) and r.right == (0.0, 0.0) and not r.buttons and r.l2 == r.r2 == 0.0
+    assert not {"run_start", "jump", "punch"} & set(names)  # the gym: play moves are not even looked for
+
+
+def test_gta6_kettlebell_on_real_recordings():
+    """Real swings (RTMPose, 2026-11-21) from the front and from 45 degrees: one set
+    starting in the grab position (hinged, hands at the shins), L2 + R2 pressed on each
+    swing up, circle when the hands let go, and nothing from play while in the gym."""
+    from pathlib import Path
+
+    from bodyctl.output.gamepad import DryRunBackend, Gamepad
+    from bodyctl.tier0 import Tier0
+
+    fixtures = Path(__file__).parent / "fixtures"
+    for name, swings in (("front", 12), ("right45", 9)):  # counted on the video, top by top
+        rec = Recording.load(fixtures / f"kettlebell_{name}.npz")
+        app = Tier0(load_profile(GTA6), Gamepad(DryRunBackend(), 30, 30), clock=lambda: 0)
+        app.engine.set_mode("fitness", 0)
+        app.gestures.exercise = "kettlebell"
+        names, l2, circles, circle = [], [], 0, False
+        for t, p in zip(rec.t_us, rec.poses(), strict=True):
+            names += [e.name for e in app.step(int(t), p, t_pose_us=int(t)).events]
+            r = app.gamepad.report
+            l2.append(r.l2)
+            circles += "circle" in r.buttons and not circle
+            circle = "circle" in r.buttons
+        assert names.count("workout_start") == 1 and names.count("workout_end") == 1, name
+        assert names.count("kettlebell") == swings, name
+        assert set(names) == {"workout_start", "workout_end", "kettlebell"}, name
+        ups = sum(1 for a, b in zip(l2, l2[1:], strict=False) if b >= 0.5 > a)
+        assert abs(ups - swings) <= 1, (name, ups)
+        assert circles == 1, name

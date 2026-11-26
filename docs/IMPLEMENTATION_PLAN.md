@@ -142,6 +142,7 @@ Every video chapter shows a latency number, so this comes before anything else i
     - Aim: forearm raised toward the camera above a height threshold; held = trigger held.
     - Lean: shoulder-line angle → stick X.
 - [ ] Install ViGEmBus via `vgamepad`; confirm chiaki-ng lists the virtual Xbox 360 pad and that it drives the PS5 (record the answer in `CLAUDE.md`).
+    - 2026-11-21: the virtual pad drives GTA 6 on the PS5 through Veyra 2.1.9 Remote Play (any controller). chiaki-ng itself still to try.
 - [ ] Map to the virtual gamepad via the profile; run with chiaki-ng on GTA V.
     - Done in code: `bodyctl.mapping.BindingEngine`, `bodyctl.output.gamepad` (press scheduler for hard rule 8, `vgamepad` and `dry-run` backends), `bodyctl webcam`. To do: run on the Windows PC with chiaki-ng.
 - [x] Dashboard: skeleton overlay, live events, cadence, confidence bars (built into `bodyctl webcam`; corner flash doubles as the fallback output marker; keys: m mode, p pause, r reset stats).

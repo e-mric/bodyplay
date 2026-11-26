@@ -91,6 +91,7 @@ class Panel:
     pad: list[str] | None = None  # live play: latency lines
     report: object | None = None  # gamepad Report: drawn as the controller picture
     pad_kind: str = "xbox"  # xbox or dualsense (pad_view.PADS)
+    fitness: bool = False  # hide running/leaning meters in the gym UI
 
 
 @dataclass
@@ -425,7 +426,13 @@ def _status(st) -> str:
         names = {"pushup": "PUSH-UPS", "pullup": "PULL-UPS", "kettlebell": "SWINGS", "squat": "SQUATS",
                  "deadlift": "DEADLIFTS", "bench": "BENCH", "bag": "BAG"}  # fmt: skip
         name = names.get(workout, workout.upper())
+        if workout == "bag":
+            return name
         return f"{name} {st.workout_reps}"
+    if getattr(st, "bag_hitting", False):
+        return "HIT!"
+    if getattr(st, "exercise_name", ""):
+        return "READY"
     if getattr(st, "flying", False):
         return "FLYING"
     if getattr(st, "wheel_open", False):
@@ -454,12 +461,15 @@ def _panel(c: T.Canvas, p: Panel) -> None:
         tracked = "TRACKED" if st.visible else "NOT FOUND"
         d.text((x, y), tracked, font=f, fill=T.MINT if st.visible else T.PINK)
         ax = x + T.text_width(tracked, "body", 19) + 14
-        d.text((ax, y), _status(st), font=f, fill=T.LAVENDER if _status(st) == "idle" else T.MINT)
-        d.text((x + w, y), f"{st.cadence_hz:.1f} steps/s" + ("  SPRINT" if st.sprinting else ""),
-               font=f, fill=T.CREAM, anchor="ra")  # fmt: skip
+        status = _status(st)
+        d.text((ax, y), status, font=f, fill=T.LAVENDER if status == "idle" else T.MINT)
+        if not p.fitness:
+            d.text((x + w, y), f"{st.cadence_hz:.1f} steps/s" + ("  SPRINT" if st.sprinting else ""),
+                   font=f, fill=T.CREAM, anchor="ra")  # fmt: skip
         y += 30
-        y = _bar(c, x, y, w, "RUN", st.run_stick)
-        y = _bar(c, x, y, w, f"LEAN {st.lean_deg:+.0f}°", st.lean_stick, signed=True) + 2
+        if not p.fitness:
+            y = _bar(c, x, y, w, "RUN", st.run_stick)
+            y = _bar(c, x, y, w, f"LEAN {st.lean_deg:+.0f}°", st.lean_stick, signed=True) + 2
     if p.events is not None:
         y = _section(c, x, y, w, "DETECTED")
         if not p.events:

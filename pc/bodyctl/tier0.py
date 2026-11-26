@@ -91,7 +91,11 @@ def run_webcam(
     topmost: bool = False,
     pad: str = "xbox",
     exercise: str = "",
+    mode: str = "on_foot",
+    record: str | None = None,
 ) -> int:
+    """record: save the session (poses + the pad sent) as a drill-style recording, to
+    replay through the gestures later (`.npz`, written when you quit)."""
     from bodyctl.sensors.webcam_pose import Camera, open_pose
     from bodyctl.tools.dashboard import Dashboard
 
@@ -104,6 +108,7 @@ def run_webcam(
         cleanup.callback(cam.close)
         print(f"camera {camera_index}: {cam.size[0]}x{cam.size[1]} @ {cam.fps:.0f} fps; Ctrl+C or q to quit")
         app = Tier0(profile, gamepad)
+        app.engine.set_mode(mode, now_us())  # e.g. fitness: only the gym exercises reach the game
         app.gestures.exercise = exercise
         dash = Dashboard(rect=window, topmost=topmost, pad_kind=pad) if show else None
         if dash:
@@ -112,10 +117,21 @@ def run_webcam(
             gamepad.marker = MultiMarker(gamepad.marker, _FlashOnly(dash))
         fps_est = 0.0
         last_t = None
+        rec = None
+        if record:
+            from datetime import datetime
+
+            from bodyctl.tools.drill import RecordingBuilder
+
+            moves = [exercise] if mode == "fitness" and exercise else []
+            rec = RecordingBuilder({"source": "webcam", "moves": moves, "mode": mode, "pose": label,
+                                    "created": datetime.now().isoformat(timespec="seconds")})  # fmt: skip
         try:
             for t_cap, frame in _frames(cam):
                 pose = estimator.detect(frame, t_cap)
                 res = app.step(t_cap, pose)
+                if rec is not None:
+                    rec.add(t_cap, pose, gamepad.report)
                 if last_t is not None:
                     fps_est += 0.1 * (1e6 / max(1, t_cap - last_t) - fps_est)
                 last_t = t_cap
@@ -149,6 +165,8 @@ def run_webcam(
         except KeyboardInterrupt:
             pass
         finally:
+            if rec is not None and len(rec):
+                print(f"recording saved to {rec.build().save(record)}")
             print(app.stats.format())
             gamepad.release_all(now_us())
             gamepad.update(now_us())

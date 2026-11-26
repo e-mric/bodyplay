@@ -92,6 +92,7 @@ def cmd_webcam(args: argparse.Namespace) -> int:
         game = load_profile(Path("config/profiles") / f"{args.game}.yaml")
         prof = game.model_copy(update={"gestures": prof.gestures})
         profile = f"{Path(profile).as_posix()} thresholds + {args.game} controls"
+    mode = args.mode or ("fitness" if args.game == "gta6" and prof.mode_for("fitness") else "on_foot")
     w, _, h = args.size.partition("x")
     backend = open_backend(args.backend, verbose=args.verbose)
     gamepad = Gamepad(backend, prof.press.hold_ms, prof.press.release_ms, open_marker(args.marker_port))
@@ -114,6 +115,8 @@ def cmd_webcam(args: argparse.Namespace) -> int:
         topmost=args.on_top,
         pad=args.pad,
         exercise=args.exercise,
+        mode=mode,
+        record=args.record,
     )
 
 
@@ -169,6 +172,11 @@ def cmd_webcam_drill(args: argparse.Namespace) -> int:
         from bodyctl.output.gamepad import Gamepad, open_backend
 
         prof = load_profile(profile)
+        if args.game:
+            from pathlib import Path
+
+            game = load_profile(Path("config/profiles") / f"{args.game}.yaml")
+            prof = game.model_copy(update={"gestures": prof.gestures})
         backend = open_backend("vgamepad")
         gamepad = Gamepad(backend, prof.press.hold_ms, prof.press.release_ms)
         if backend.slot is None:
@@ -204,6 +212,7 @@ def _drill_angles(args, moves, angles, profile, size, gamepad) -> int:
             gamepad=gamepad,
             window_rect=window,
             topmost=args.on_top,
+            game=args.game,
         )
         if path is None:
             print("quit")
@@ -532,11 +541,17 @@ def build_parser() -> argparse.ArgumentParser:
         "--game",
         help="play another game's controls (config/profiles/<game>.yaml, e.g. gta6) with these thresholds",
     )
+    sp.add_argument("--record", metavar="FILE.npz", help="save the session's poses and pad to replay later")
     sp.add_argument(
         "--exercise",
         choices=["", "pushup", "pullup", "kettlebell", "squat", "deadlift", "bench", "bag"],
         default="",
-        help="fitness mode: the exercise to look for (key e cycles them; default any)",
+        help="fitness mode: pin one exercise (key e cycles them; default AUTO detects any pose)",
+    )
+    sp.add_argument(
+        "--mode",
+        default=None,
+        help="game mode to start in (key m cycles them; GTA 6 defaults to fitness, other games to on_foot)",
     )
     sp.add_argument("--pose", choices=["auto", "mediapipe", "rtmpose"], default="auto", help=pose_help)
     sp.add_argument(
@@ -584,10 +599,15 @@ def build_parser() -> argparse.ArgumentParser:
             "pushup",
             "pullup",
             "kettlebell",
+            "squat",
+            "boxing",
             "all",
         ],
         metavar="MOVE",
-        help="moves to drill; all = every standing move (pushup, pullup, kettlebell only when named)",
+        help=(
+            "moves to drill; workouts (pushup, pullup, kettlebell, squat, boxing) "
+            "are only included when named"
+        ),
     )
     sp.add_argument("--reps", type=int, default=8, help="repetitions of each move")
     sp.add_argument(
@@ -596,6 +616,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="camera placements, comma separated: front, right30, left30, right45, left45",
     )
     sp.add_argument("--profile", help="thresholds for live feedback (default: tuned profile if any)")
+    sp.add_argument(
+        "--game", help="game controls from config/profiles/<game>.yaml, with the selected thresholds"
+    )
     sp.add_argument("--pose", choices=["auto", "mediapipe", "rtmpose"], default="auto", help=pose_help)
     sp.add_argument("--camera", type=int, default=0, help="camera index")
     sp.add_argument("--size", default="640x480", help="capture size WxH")
