@@ -100,7 +100,7 @@ Boxing sends Square (virtual Xbox X) on each detected punch.
 
 | Exercise | Set starts | Set ends (circle) | Camera |
 |---|---|---|---|
-| pull-ups | both hands up on the bar (or straight overhead without one) | arms down to your sides | sees hands to hips |
+| pull-ups | both hands up on the bar (or straight overhead without one) | arms down to your sides | sees hands to hips; from behind works too |
 | push-ups | hands on the floor | stand up | side-on, low |
 | kettlebell | both hands together, low | hands apart | front |
 | squat | stand tall with feet shoulder-width apart, hands at shoulder height (bar on your back); the bar is lifted off the rack at once | hands down | front |

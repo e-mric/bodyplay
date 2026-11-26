@@ -188,7 +188,10 @@ class WebcamParams(_Strict):
         "the floor (standing ~0, plank 0.5 and up)",
     )
     hang_reach: float = Field(
-        0.5, gt=0, description="Pull-ups: both wrists this far above the shoulders (torso lengths) = hanging"
+        0.5,
+        gt=0,
+        description="Pull-ups: both wrists this far above the shoulders = hanging (picked: arm lengths, "
+        "1 = straight up; AUTO: torso lengths)",
     )
     workout_hold_ms: int = Field(400, ge=0, description="Plank / hang held this long before a set starts")
     workout_release_ms: int = Field(600, ge=0, description="Out of the posture this long before the set ends")
@@ -318,8 +321,8 @@ class WebcamParams(_Strict):
     pullup_release: float = Field(
         0.5,
         ge=0,
-        description="Pull-ups: in a set, hands lower than this under the shoulders (torso lengths) end it "
-        "(miming without a bar, they come down to the chest)",
+        description="Pull-ups: in a set, straight arms with the hands this far under the shoulders "
+        "(arm lengths; -1 = hanging down) end it: arms down by your sides",
     )
     min_visibility: float = Field(0.5, ge=0, le=1, description="Ignore landmarks MediaPipe isn't sure of")
     smooth_min_cutoff_hz: float = Field(

@@ -498,6 +498,33 @@ def test_gta6_fitness_mode_ignores_play_moves():
     assert not {"run_start", "jump", "punch"} & set(names)  # the gym: play moves are not even looked for
 
 
+def test_gta6_pullups_from_behind_on_a_real_recording():
+    """Real pull-ups on a doorway bar (RTMPose, 2026-11-26), filmed from behind and below:
+    stairs leave no room in front. Seen from there the torso looks long next to the arms,
+    and at the top the pose model puts the wrists down by the elbows. The set starts when
+    the hands reach the bar (13.5 s), every cued pull-up counts, and letting go ends it."""
+    from pathlib import Path
+
+    from bodyctl.output.gamepad import DryRunBackend, Gamepad
+    from bodyctl.tier0 import Tier0
+
+    rec = Recording.load(Path(__file__).parent / "fixtures" / "pullup_back.npz")
+    app = Tier0(load_profile(GTA6), Gamepad(DryRunBackend(), 30, 30), clock=lambda: 0)
+    app.engine.set_mode("fitness", 0)
+    app.gestures.exercise = "pullup"
+    events = []
+    for t, p in zip(rec.t_us, rec.poses(), strict=True):
+        events += [(e.name, (t - rec.t_us[0]) / 1e6) for e in app.step(int(t), p, t_pose_us=int(t)).events]
+    names = [n for n, _ in events]
+    assert names.count("workout_start") == 1 and names.count("workout_end") == 1
+    start = next(s for n, s in events if n == "workout_start")
+    assert 12.5 < start < 15.0  # hands on the bar at about 13 s
+    # Five pull-ups, counted on the video. Letting go folds the elbows like one more.
+    reps = [s for n, s in events if n == "pullup"]
+    cues = (14.1, 17.6, 21.1, 24.6, 28.1)
+    assert len(reps) in (5, 6) and all(c - 1.0 < r < c + 3.5 for c, r in zip(cues, reps, strict=False))
+
+
 def test_gta6_kettlebell_on_real_recordings():
     """Real swings (RTMPose, 2026-11-21) from the front and from 45 degrees: one set
     starting in the grab position (hinged, hands at the shins), L2 + R2 pressed on each

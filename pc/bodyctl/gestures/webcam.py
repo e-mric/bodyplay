@@ -564,14 +564,46 @@ class WebcamGestures:
         # Standing, hanging hands are level with the hips; down at the kettlebell, well below.
         return together and float(wr[1] - hip[1]) / torso_px > wp.swing_grab
 
+    @staticmethod
+    def _hand_up(pose: Pose, arm: _Arm) -> float:
+        """How far the hand is above the shoulder, in lengths of that arm as the camera
+        sees it (shoulder to elbow to wrist): 1 = straight up, -1 = hanging down. Unlike
+        torso lengths, this reads the same from a camera low and close (the torso looks
+        long) as from one at chest height."""
+        s, e, w = pose.img[[arm.shoulder, arm.elbow, arm.wrist], :2]
+        length = float(np.linalg.norm(e - s) + np.linalg.norm(w - e))
+        return float(s[1] - w[1]) / max(length, 1e-6)
+
     def _hanging(self, pose: Pose, torso_px: float, reach: float) -> bool:
-        """Both hands above the shoulders by `reach` torso lengths and closer together
-        than spread wings: holding a bar overhead."""
+        """Both hands above the shoulders by `reach` and closer together than spread
+        wings: holding a bar overhead. With pull-ups picked, `reach` is in arm lengths, which
+        reads the same from any camera (from behind and below, it's how a hang shows). In
+        AUTO it stays in torso lengths: the top of a kettlebell swing, arms pointing at the
+        camera, looks short-armed and would pass for a hang."""
         if not self._visible(pose, L_SHOULDER, R_SHOULDER, L_WRIST, R_WRIST):
             return False
-        xy = pose.img[:, :2] / torso_px
-        up = min(xy[L_SHOULDER, 1] - xy[L_WRIST, 1], xy[R_SHOULDER, 1] - xy[R_WRIST, 1])
-        return up > reach and float(np.linalg.norm(xy[L_WRIST] - xy[R_WRIST])) < self.params.webcam.fly_span
+        if self.exercise == "pullup":
+            if not self._visible(pose, L_ELBOW, R_ELBOW):
+                return False
+            up = min(self._hand_up(pose, arm) for arm in self._arms)
+        else:
+            xy = pose.img[:, :2] / torso_px
+            up = min(xy[L_SHOULDER, 1] - xy[L_WRIST, 1], xy[R_SHOULDER, 1] - xy[R_WRIST, 1])
+        apart = float(np.linalg.norm(pose.img[L_WRIST, :2] - pose.img[R_WRIST, :2])) / torso_px
+        return up > reach and apart < self.params.webcam.fly_span
+
+    def _on_bar(self, pose: Pose, torso_px: float) -> bool:
+        """Still in a pull-up set: off the bar only once the arms seen are straight and
+        the hands low, down by your sides. Bent elbows are a rep, whatever the hands
+        look like: seen from behind at the top, the pose model puts the wrists down by
+        the elbows. Arms the camera can't make out carry the set on."""
+        wp = self.params.webcam
+        seen = [a for a in self._arms if self._visible(pose, a.shoulder, a.elbow, a.wrist)]
+        return not seen or not all(
+            self._elbow_deg(pose, a, torso_px) > wp.pullup_bottom_deg
+            and self._hand_up(pose, a) < -wp.pullup_release
+            for a in seen
+        )
 
     def _workout(self, pose: Pose, events: list[GestureEvent]) -> bool:
         """Push-ups and pull-ups. Each completed rep fires one event. True while the body
@@ -599,13 +631,10 @@ class WebcamGestures:
             self._body_t_us = t
             self._body_px = max(torso_px, (self._body_px or 0.0) * (1 - wp.body_scale_decay * dt))
         floor = arm_px > 1e-6 and (wr[1] - hip[1]) / arm_px > wp.plank_hip
-        hang = torso_px > 1e-6 and self._hanging(
-            # Once hanging, the hands may come down near the shoulders (top of a pull-up on
-            # a bar) or just under them (miming one: pulled down to the chest); arms
-            # dropped to your sides end the set.
-            pose,
-            torso_px,
-            -wp.pullup_release if self.state.workout == "pullup" else wp.hang_reach,
+        hang = torso_px > 1e-6 and (
+            self._on_bar(pose, torso_px)
+            if self.state.workout == "pullup"
+            else self._hanging(pose, torso_px, wp.hang_reach)
         )
         if self.state.workout != "pullup" and self.state.wheel_open:
             hang = False  # pointing up at the wheel's top slot, not grabbing a bar
