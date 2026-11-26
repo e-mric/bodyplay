@@ -525,6 +525,21 @@ def test_gta6_pullups_from_behind_on_a_real_recording():
     assert len(reps) in (5, 6) and all(c - 1.0 < r < c + 3.5 for c, r in zip(cues, reps, strict=False))
 
 
+def test_gta6_squats_and_bag_on_a_real_recording():
+    """Real drill (RTMPose, 2026-11-27, camera in front): six squats with the hands at the
+    shoulders, then six alternating punches at the bag, then moving around with the guard
+    down. Every squat counts though the pose reads the hips high for a moment at some tops;
+    every punch counts, and arms dropping to the sides afterwards mostly don't."""
+    from pathlib import Path
+
+    from bodyctl.tools.webcam_tune import score
+
+    rec = Recording.load(Path(__file__).parent / "fixtures" / "squat_boxing_front.npz")
+    scores = score(rec, load_profile(GTA6).gestures).events
+    assert (scores["squat"].hits, scores["squat"].expected, scores["squat"].false) == (6, 6, 0)
+    assert (scores["bag_hit"].hits, scores["bag_hit"].expected) == (6, 6) and scores["bag_hit"].false <= 2
+
+
 def test_gta6_kettlebell_on_real_recordings():
     """Real swings (RTMPose, 2026-11-21) from the front and from 45 degrees: one set
     starting in the grab position (hinged, hands at the shins), L2 + R2 pressed on each

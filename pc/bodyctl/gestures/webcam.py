@@ -227,6 +227,7 @@ class WebcamGestures:
         self._tops: deque[tuple[int, float]] = deque()  # push-up: (t_us, shoulder height above hands)
         self._rep_last: tuple[int, float] | None = None  # (t_us, rep progress) last frame
         self._set_top = 0.0  # squat / deadlift / bench: the tallest measure this set (= the top)
+        self._set_top_t_us: int | None = None
         # Punching bag, per arm (left, right): the guard position the punch starts from,
         # armed for the next punch, the farthest travel / extension since the last one.
         self._bag_last: tuple[int, np.ndarray] | None = None  # (t_us, wrists / torso) last frame
@@ -515,7 +516,10 @@ class WebcamGestures:
             )
             last_hit = self._bag_hit_us[arm]
             cooled = last_hit is None or t - last_hit >= wp.bag_refractory_ms * 1000
-            if (fast_hit or extension_hit) and cooled:
+            # A punch leaves the guard and lands at the bag, both with the hand up: an arm
+            # dropping to your side (or coming up from there) isn't one.
+            guarded = max(float(self._bag_anchor[arm][1]), float(w[arm][1])) < wp.bag_guard_low
+            if (fast_hit or extension_hit) and cooled and guarded:
                 self.state.bag_hitting = True
                 self._bag_armed[arm] = False
                 self._bag_hit_us[arm] = t
@@ -686,7 +690,11 @@ class WebcamGestures:
         elif self.state.workout in ("squat", "deadlift", "bench") and kind == self.state.workout:
             measure = self._gym_measure(pose, sh, wr, hip, torso_px)
             if measure is not None and measure > 1e-6:
-                self._set_top = max(self._set_top, measure)
+                # The top is the tallest reading, slowly forgotten: a pose misread a bit
+                # high (hips at the top of a squat) would otherwise hold it out of reach.
+                dt = 0.0 if self._set_top_t_us is None else min((t - self._set_top_t_us) / 1e6, 1.0)
+                self._set_top_t_us = t
+                self._set_top = max(measure, self._set_top * (1 - wp.rep_top_decay * dt))
                 bottom = {"squat": wp.squat_bottom, "deadlift": wp.deadlift_bottom, "bench": wp.bench_bottom}
                 b = bottom[self.state.workout]
                 progress = (measure / self._set_top - b) / (1 - b)
@@ -747,7 +755,7 @@ class WebcamGestures:
                     self._end_rep_phase()
                     self._rep_armed = False
                     self._tops.clear()
-                    self._set_top = 0.0
+                    self._set_top, self._set_top_t_us = 0.0, None
                     self._bag_reset()
                     if kind in TOP_START:  # the bar starts on the rack: lift it off right away
                         self.state.workout_rising = True

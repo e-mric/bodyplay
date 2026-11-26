@@ -273,11 +273,22 @@ class WebcamParams(_Strict):
         0.3, ge=0, le=1, description="Squat / deadlift / bench: progress below this = the bottom"
     )
     rep_high: float = Field(0.9, ge=0, le=1, description="... back above this = one rep")
+    rep_top_decay: float = Field(
+        0.1,
+        ge=0,
+        description="Squat / deadlift / bench: the set's tallest reading fades at this rate (/s), so one "
+        "high misread doesn't put the top out of reach",
+    )
     bag_speed: float = Field(
         2.5, gt=0, description="Punching bag: a hand faster than this (torso lengths/s) = hitting"
     )
     bag_refractory_ms: int = Field(
         180, ge=0, description="Punching bag: minimum time between counted punches"
+    )
+    bag_guard_low: float = Field(
+        0.5,
+        description="Punching bag: a punch starts and lands with the hand above this (torso lengths "
+        "under the shoulders); lower is an arm down by your side",
     )
     bag_min_travel: float = Field(
         0.18, gt=0, description="Punching bag: minimum wrist travel from rest before a punch counts"
