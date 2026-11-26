@@ -309,6 +309,41 @@ def test_kettlebell_reps_and_tier0_fitness_mode():
     assert names.count("workout_start") == 1 and names.count("kettlebell") == 4
 
 
+def test_gta6_walking_off_mid_set_ends_it():
+    """Put the kettlebell down and walk out of view: the set ends (circle) and the
+    triggers let go, though no frame ever shows you out of the posture."""
+    from bodyctl.mapping import BindingEngine
+    from bodyctl.output.gamepad import DryRunBackend, Gamepad
+
+    f, stand = Frames(), standing()[0]
+    f.hold(stand, 1.0)
+    f.blend(stand, swing_pose(0.0), 0.5)
+    f.hold(swing_pose(0.0), 0.8)
+    f.reps(swing_pose, 0.0, 1.0, 2)
+    f.blend(swing_pose(0.0), swing_pose(0.7), 0.3)  # swinging up when the camera loses you
+    prof = load_profile(GTA6)
+    gp = Gamepad(DryRunBackend(), prof.press.hold_ms, prof.press.release_ms)
+    engine = BindingEngine(prof, gp, mode="fitness")
+    g = WebcamGestures(prof.gestures, fitness=True)
+    names, t = [], 0
+    for p in f.poses():
+        events = g.update(p)
+        engine.apply(g.state, events, p.t_us)
+        names += [e.name for e in events]
+        t = p.t_us
+    assert g.state.workout == "kettlebell" and gp.report.l2 > 0
+    circle = False
+    for k in range(1, 91):  # 3 s with nobody in view
+        t += 33_333
+        events = g.update(None, t)
+        engine.apply(g.state, events, t)
+        names += [e.name for e in events]
+        circle |= "circle" in gp.report.buttons
+        if k == 30:
+            assert g.state.workout == "kettlebell"  # a 1 s dropout carries the set on
+    assert names.count("workout_end") == 1 and circle and gp.report.l2 == 0
+
+
 def edges(rows, button: str) -> int:
     return sum(1 for (_, a, _), (_, b, _) in zip(rows, rows[1:], strict=False)
                if button in b.buttons and button not in a.buttons)  # fmt: skip

@@ -192,6 +192,9 @@ class WebcamParams(_Strict):
     )
     workout_hold_ms: int = Field(400, ge=0, description="Plank / hang held this long before a set starts")
     workout_release_ms: int = Field(600, ge=0, description="Out of the posture this long before the set ends")
+    workout_gone_ms: int = Field(
+        2000, ge=0, description="Nobody in view this long ends a set (you put the weight down and walked off)"
+    )
     workout_settle_ms: int = Field(
         1500,
         ge=0,

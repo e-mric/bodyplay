@@ -46,7 +46,7 @@ class Tier0:
     def step(self, t_capture_us: int, pose: Pose | None, t_pose_us: int | None = None) -> FrameResult:
         t_pose_us = t_pose_us if t_pose_us is not None else self.clock()
         self.gestures.fitness = self.mode == "fitness"
-        events = self.gestures.update(pose)
+        events = self.gestures.update(pose, t_capture_us)
         t_gesture = self.clock()
         self.engine.apply(self.gestures.state, events, t_gesture)
         t_out = self.clock()

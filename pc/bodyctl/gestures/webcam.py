@@ -222,6 +222,7 @@ class WebcamGestures:
         self._fly_lost_us: int | None = None
         self._posture_since_us: int | None = None  # plank / hang seen since, set not started yet
         self._posture_lost_us: int | None = None
+        self._gone_since_us: int | None = None  # nobody in view since (mid-set)
         self._rep_armed = False  # push-up: been down; pull-up: hung with straight arms
         self._tops: deque[tuple[int, float]] = deque()  # push-up: (t_us, shoulder height above hands)
         self._rep_last: tuple[int, float] | None = None  # (t_us, rep progress) last frame
@@ -284,10 +285,16 @@ class WebcamGestures:
 
     # -- main entry ----------------------------------------------------------
 
-    def update(self, pose: Pose | None) -> list[GestureEvent]:
-        """Feed one frame (None = no person found). Returns events fired this frame."""
+    def update(self, pose: Pose | None, t_us: int | None = None) -> list[GestureEvent]:
+        """Feed one frame (None = no person found). `t_us` is the frame's time, needed only
+        when there's no pose: a set ends once nobody has been in view for a while. Returns
+        events fired this frame."""
         events: list[GestureEvent] = []
         self.state.exercise_name = (self.exercise.upper() or "AUTO") if self.fitness else ""
+        if pose is not None:
+            self._gone_since_us = None
+        elif self.state.workout and t_us is not None:
+            self._workout_gone(t_us, events)
         if self._smooth:
             if pose is None:
                 self._filter_img.reset()
@@ -722,14 +729,25 @@ class WebcamGestures:
         self._posture_lost_us = self._posture_lost_us or t_us
         if (t_us - self._posture_lost_us) / 1000 < wp.workout_release_ms:
             return True
+        self._end_set(t_us, events)
+        return False
+
+    def _workout_gone(self, t_us: int, events: list[GestureEvent]) -> None:
+        """Nobody in view mid-set. A short dropout carries the set on; after
+        `workout_gone_ms` you have walked off, so the set ends."""
+        self._gone_since_us = self._gone_since_us or t_us
+        if (t_us - self._gone_since_us) / 1000 >= self.params.webcam.workout_gone_ms:
+            self._gone_since_us = None
+            self._end_set(t_us, events)
+
+    def _end_set(self, t_us: int, events: list[GestureEvent]) -> None:
         self.state.last_workout, self.state.workout = self.state.workout, ""
         self._end_rep_phase()
         self.state.bag_hitting = False
         self._bag_reset()
-        self._posture_lost_us = None
+        self._posture_lost_us = self._posture_since_us = None
         self._settling, self._settle_since_us = True, t_us
         events.append(GestureEvent("workout_end", t_us, 1.0))
-        return False
 
     def _end_rep_phase(self) -> None:
         self._rep_last, self._rep_speed, self._stuck_since_us = None, 0.0, None

@@ -201,7 +201,7 @@ def replay(rec: Recording, gestures: Gestures, poses: list[Pose | None] | None =
             if rec.cues[cue_i].label in SET_CUES:
                 g.exercise = SET_CUES[rec.cues[cue_i].label]
             cue_i += 1
-        events.extend((int(t), e.name) for e in g.update(p))
+        events.extend((int(t), e.name) for e in g.update(p, int(t)))
         st = g.state
         if st.visible:
             lean[i] = st.lean_deg

@@ -687,7 +687,7 @@ def run_drill(
                 views.append(measure_view(pose, f.shape[0]))
             if writer is not None:
                 writer.write(f)
-            events = gestures.update(pose)
+            events = gestures.update(pose, t)
             for e in events:
                 if e.name != "step":
                     detections.append((t, e.name, e.name in expected))
