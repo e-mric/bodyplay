@@ -116,6 +116,7 @@ class BodyState:
             "wheel_open": self.wheel_open,
             "flying": self.flying,
             "working_out": bool(self.workout),
+            "lifting": bool(self.workout) and self.workout != "bag",  # a set with reps
             "workout_struggling": self.workout_struggling,
             "bag_hitting": self.bag_hitting,
             "exit_after_set": self.last_workout != "bag",

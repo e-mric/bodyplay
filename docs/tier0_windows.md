@@ -95,7 +95,8 @@ squats, deadlifts and bench. Set `--exercise` or press **e** to pin one when pos
 overlap; the punching bag must be picked (`--exercise bag`), since a punch looks like any
 arm movement. These automatic paths still need live calibration per exercise. Each lift
 rep presses L2 + R2 harder as you go up, holds them at the top, releases them as you go
-down; X is mashed when you stall partway up, and circle is tapped when the set ends.
+down; X is mashed through the whole set (the game asks for it when the character tires
+near the end), and circle is tapped when the set ends.
 Boxing sends Square (virtual Xbox X) on each detected punch.
 
 | Exercise | Set starts | Set ends (circle) | Camera |

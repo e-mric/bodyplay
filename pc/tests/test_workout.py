@@ -254,10 +254,14 @@ def test_gta6_pullups_press_up_hold_at_the_top_release_going_down():
     # Pressed again from the bottom for every rep: one real press (past half pressure) per rep.
     starts = sum(1 for (_, a, _), (_, b, _) in zip(rows, rows[1:], strict=False) if b.l2 >= 0.5 > a.l2)
     assert starts == 3
-    assert not any("cross" in r.buttons for _, r, _ in rows)  # no struggle
-    circles = sum(1 for (_, a, _), (_, b, _) in zip(rows, rows[1:], strict=False)
-                  if "circle" in b.buttons and "circle" not in a.buttons)  # fmt: skip
-    assert circles == 1  # let go of the bar once, at the end (RELACHER)
+    circles = [t for (_, a, _), (t, b, _) in zip(rows, rows[1:], strict=False)
+               if "circle" in b.buttons and "circle" not in a.buttons]  # fmt: skip
+    assert len(circles) == 1  # let go of the bar once, at the end (RELACHER)
+    # X is mashed through the whole set, ready for when the character tires at the end
+    # (the game ignores it before), and stops when the set does.
+    crosses = [t for (_, a, _), (t, b, _) in zip(rows, rows[1:], strict=False)
+               if "cross" in b.buttons and "cross" not in a.buttons]  # fmt: skip
+    assert len(crosses) > 20 and crosses[0] < 2.5 and crosses[-1] < circles[0]
 
 
 def test_gta6_stuck_rep_mashes_x():
@@ -475,6 +479,7 @@ def test_gta6_punching_bag_mashes_square_only_while_hitting():
                if "square" in b.buttons and "square" not in a.buttons]  # fmt: skip
     assert len(squares) >= 6 and all(1.4 < t < 3.3 for t in squares)  # while jabbing (1.5-3.0 s), not after
     assert edges(rows, "circle") == 0 and not any(r.l2 for _, r, _ in rows)  # no rep triggers, no POSER
+    assert edges(rows, "cross") == 0  # no reps to struggle on
 
 
 def test_gta6_fitness_mode_ignores_play_moves():

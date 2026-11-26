@@ -103,8 +103,8 @@ modes:
 # GTA 6 fitness (mode fitness, key m on the dashboard), read off the game 2026-11-21:
 # "SE HISSER" = L2 + R2, pressed harder as the rep goes up and held at the top;
 # "DESCENDRE" = release them to go down; pressed again from the bottom. "RELACHER" =
-# circle (let go of the bar): tapped when the set ends. X is mashed when a rep stalls
-# partway up (the game asks for X on tired reps, near the end of a set).
+# circle (let go of the bar): tapped when the set ends. X is mashed through the whole set
+# (struggle_always): the game asks for it on tired reps near the end and ignores it before.
 # Kettlebell swings (SOULEVER / ABAISSER / POSER): the same, with hands-together swings
 # from the knees to the chest; fitness mode only. Key e on the dashboard (or --exercise)
 # picks the station's exercise so only that one is looked for. Squats and bench start on
@@ -115,7 +115,7 @@ tier0:
   cover: {tap: r1}
   flight: {stick: left_stick}
   aim_nudge: {stick: right_stick}   # while aiming, move the aiming hand to steer the crosshair
-  workout: {style: triggers, triggers: [l2, r2], struggle_tap: cross, exit_tap: circle, modes: [fitness]}
+  workout: {style: triggers, triggers: [l2, r2], struggle_tap: cross, struggle_always: true, exit_tap: circle, modes: [fitness]}
 
 # Left to the DualSense: R1 cover / handbrake, L3 stealth / horn, L1 weapon wheel,
 # D-pad phone, R3 look behind, aircraft yaw and landing gear, menus.

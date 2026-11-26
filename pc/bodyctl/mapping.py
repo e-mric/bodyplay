@@ -93,9 +93,10 @@ class BindingEngine:
                     for trigger in workout.triggers:
                         gp.set_trigger(trigger, state.source("workout_press"))
                     last = self._last_pulse_us.get("workout_struggle")
-                    if state.condition("workout_struggling") and (
-                        last is None or now_us - last >= 1e6 / workout.struggle_hz
-                    ):
+                    struggle = state.condition("workout_struggling") or (
+                        workout.struggle_always and state.condition("lifting")
+                    )
+                    if struggle and (last is None or now_us - last >= 1e6 / workout.struggle_hz):
                         self._last_pulse_us["workout_struggle"] = now_us
                         gp.press(workout.struggle_tap, now_us)
                 last = self._last_pulse_us.get("workout_bag")

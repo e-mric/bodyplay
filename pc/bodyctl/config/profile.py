@@ -550,6 +550,11 @@ class Workout(_Strict):
         default_factory=lambda: ["l2", "r2"], description="style triggers: pressed through each rep"
     )
     struggle_tap: str = Field("cross", description="style triggers: mashed while a rep is stuck")
+    struggle_always: bool = Field(
+        False,
+        description="style triggers: mash struggle_tap through the whole set, from its start (GTA 6 only "
+        "asks for it when the character tires, and ignores it otherwise), instead of only on a stall",
+    )
     struggle_hz: float = Field(8.0, gt=0, le=15, description="Mash rate (rule 8 caps presses at ~15 Hz)")
     bag_tap: str = Field("square", description="style triggers, punching bag: mashed while you hit")
     bag_hz: float = Field(
