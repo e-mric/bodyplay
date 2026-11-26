@@ -125,6 +125,7 @@ class Step:
     label: str
     text: str
     seconds: float
+    voice: str = ""  # spoken cue (voice.LINES key); "" = the label's
 
     @property
     def is_action(self) -> bool:
@@ -241,7 +242,7 @@ def build_script(moves: list[str], reps: int) -> list[Step]:
     of natural movement with no actions (to count false detections)."""
     s = [Step("still", "Stand still, arms down", 5.0)]
     for m in moves:
-        s.append(Step("ready", "Next: " + HOW[m], 4.0))
+        s.append(Step("ready", "Next: " + HOW[m], 4.0, voice=f"ready_{m}"))
         s += _reps(m, reps)
     s += [
         Step("shift", "Move naturally: shift your weight, look around. No actions!", 8.0),
@@ -497,32 +498,6 @@ def view_checks(view: View, missing: list[str], target_yaw: float) -> tuple[list
 # --- live drill -------------------------------------------------------------------
 
 
-class _Beeper:
-    """Short tone at each action cue; silently off if there's no audio device."""
-
-    def __init__(self, enabled: bool):
-        self._sd = None
-        if not enabled:
-            return
-        try:
-            import sounddevice as sd
-
-            self._sr = 44100
-            t = np.arange(int(0.12 * self._sr)) / self._sr
-            self._tone = (0.3 * np.sin(2 * np.pi * 880 * t)).astype(np.float32)
-            self._sd = sd
-        except Exception:
-            self._sd = None
-
-    def __call__(self) -> None:
-        if self._sd is None:
-            return
-        try:
-            self._sd.play(self._tone, self._sr)
-        except Exception:
-            self._sd = None
-
-
 def run_drill(
     moves: list[str],
     reps: int,
@@ -541,6 +516,7 @@ def run_drill(
     window_rect: tuple[int, int, int, int] | None = None,
     topmost: bool = False,
     game: str | None = None,
+    voice: bool = True,
 ) -> Path | None:
     import cv2
 
@@ -550,6 +526,7 @@ def run_drill(
     from bodyctl.output.gamepad import DryRunBackend, Gamepad
     from bodyctl.sensors.webcam_pose import Camera, open_pose
     from bodyctl.tools import drill_view as V
+    from bodyctl.tools.voice import Sound
     from bodyctl.tools.webcam_tune import format_scores, match_cues, score
 
     prof = load_profile(profile_path)
@@ -588,7 +565,7 @@ def run_drill(
     engine = BindingEngine(
         prof, gamepad, mode="fitness" if fitness and prof.mode_for("fitness") else "on_foot"
     )
-    beep = _Beeper(sound)
+    audio = Sound(sound, voice)
     writer = None
     if video:
         fourcc = cv2.VideoWriter_fourcc(*"mp4v")
@@ -631,12 +608,14 @@ def run_drill(
         smooth = ViewSmoother()
         good_since = None
         countdown_from = None
+        spoken = 0  # last number of the countdown said out loud
         while True:
             t, f, pose = frame()
             view = smooth.update(measure_view(pose, f.shape[0]))
             checks, ready = view_checks(view, missing_parts(pose), target_yaw)
             if not ready:
                 good_since = countdown_from = None
+                spoken = 0
                 title = f"Camera setup: {describe_yaw(target_yaw)}"
                 style = "setup"
             else:
@@ -649,7 +628,11 @@ def run_drill(
                 left = 3 - (t - countdown_from) / 1e6
                 if left <= 0:
                     break
-                title = f"Starting in {left:.0f}..."
+                n = int(np.ceil(left))
+                if n != spoken:  # three, two, one: heard from the bar, away from the screen
+                    audio.say(f"count_{n}")
+                    spoken = n
+                title = f"Starting in {n}..."
             sub = "move the camera, not your feet: always face the screen   (space: start anyway)"
             panel = V.Panel("CAMERA SETUP", checks=checks)
             key = keys(V.render(f, pose, title, sub, style, None, panel, hud, show_skeleton))
@@ -677,8 +660,9 @@ def run_drill(
                     gestures.exercise = SET_CUES[step.label]
                 t0, step_end = t, t + int(step.seconds * 1e6)
                 rec.cue(step.label, t0)
-                if step.is_action:
-                    beep()
+                # The spoken cue starts on the cue, like the beep it replaces.
+                if not audio.say(step.voice or step.label) and step.is_action:
+                    audio.beep()
                 expected = {EXPECT[step.label][0]} if step.label in EXPECT else set()
                 if i and script[i - 1].label in EXPECT:
                     expected.add(EXPECT[script[i - 1].label][0])  # its window runs into this step
@@ -718,6 +702,7 @@ def run_drill(
             if key == ord("q"):
                 raise KeyboardInterrupt
         rec.header["complete"] = True
+        audio.say("done")
     except KeyboardInterrupt:
         print("stopped early")
     finally:

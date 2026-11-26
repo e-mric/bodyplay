@@ -148,7 +148,10 @@ Add `--play` to also press the buttons in the game while you drill (virtual pad,
 same slot rule as above; `--window X,Y,W,H --on-top` keeps the drill next to the game), so
 you see on screen whether the game follows each move.
 
-During a drill, a beep and a gold title mark each cue; the side panel shows what was
+During a drill, a gold title marks each cue and a coach's voice says it ("Hang from the
+bar, arms straight", "Pull up!", "Drop down and stand"), with a spoken three-two-one before
+the start, so you can drill away from the screen. Moves with no spoken line beep instead;
+`--no-voice` beeps for every cue and `--no-sound` is silent. The side panel shows what was
 detected (check when expected, cross when not). The drill scores itself at the end.
 Recordings go to `data/drills/`; add `--video` to also keep the camera footage.
 

@@ -20,6 +20,7 @@ dev = ["pytest>=8.0", "ruff>=0.6"]
 video = [
     "matplotlib>=3.8",
     "opencv-python>=4.9",
+    "sounddevice>=0.4",  # drill beeps and spoken cues
 ]
 # Tier 0 pose estimation
 webcam = ["mediapipe>=0.10"]

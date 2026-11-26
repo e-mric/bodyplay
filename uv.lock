@@ -65,6 +65,7 @@ rtmpose = [
 video = [
     { name = "matplotlib" },
     { name = "opencv-python" },
+    { name = "sounddevice" },
 ]
 webcam = [
     { name = "mediapipe" },
@@ -91,6 +92,7 @@ rtmpose = [
 video = [
     { name = "matplotlib", specifier = ">=3.8" },
     { name = "opencv-python", specifier = ">=4.9" },
+    { name = "sounddevice", specifier = ">=0.4" },
 ]
 webcam = [{ name = "mediapipe", specifier = ">=0.10" }]
 

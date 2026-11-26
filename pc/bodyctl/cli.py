@@ -213,6 +213,7 @@ def _drill_angles(args, moves, angles, profile, size, gamepad) -> int:
             window_rect=window,
             topmost=args.on_top,
             game=args.game,
+            voice=not args.no_voice,
         )
         if path is None:
             print("quit")
@@ -626,7 +627,8 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--model", choices=["lite", "full", "heavy"], default="lite", help="pose model")
     sp.add_argument("-o", "--out", default="data/drills")
     sp.add_argument("--video", action="store_true", help="also save the camera video (.mp4)")
-    sp.add_argument("--no-sound", action="store_true", help="no beep on each cue")
+    sp.add_argument("--no-sound", action="store_true", help="silent: no spoken cues, no beeps")
+    sp.add_argument("--no-voice", action="store_true", help="beep on each cue instead of saying it")
     sp.add_argument("--pad", choices=["xbox", "dualsense"], default="xbox", help="controller picture")
     sp.add_argument(
         "--play", action="store_true", help="also press the buttons in the game (virtual pad, Windows)"
