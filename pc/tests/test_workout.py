@@ -221,6 +221,26 @@ def fitness_reports(frames: Frames, exercise: str = ""):
     return out
 
 
+def test_mimed_pullups_pausing_at_the_chest_stay_one_set():
+    """No bar: arms up, pull the hands down to the chest, pause, back up. The hands
+    dip under the shoulders at the top; only dropping the arms ends the set."""
+    chest = -0.25 * TORSO_PX  # hands this far above the shoulders: under them
+    f, stand = Frames(), standing()[0]
+    f.hold(stand, 1.0)
+    f.blend(stand, hang(2 * HANG_ARM), 0.6)
+    f.hold(hang(2 * HANG_ARM), 0.8)
+    for _ in range(4):
+        f.blend(hang(2 * HANG_ARM), hang(chest), 0.7)
+        f.hold(hang(chest), 1.0)
+        f.blend(hang(chest), hang(2 * HANG_ARM), 0.7)
+        f.hold(hang(2 * HANG_ARM), 0.4)
+    f.blend(hang(2 * HANG_ARM), stand, 0.6)
+    f.hold(stand, 4.0)
+    names = [n for n, _ in run(f)[0]]
+    assert names.count("pullup") == 4
+    assert names.count("workout_start") == 1 and names.count("workout_end") == 1
+
+
 def test_gta6_pullups_press_up_hold_at_the_top_release_going_down():
     rows = fitness_reports(pullup_set(3))
     pressed = [(t, r, p) for t, r, p in rows if r.l2 > 0]

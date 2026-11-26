@@ -315,6 +315,12 @@ class WebcamParams(_Strict):
     pullup_top_deg: float = Field(
         90, gt=0, lt=180, description="Pull-up: elbow below this = chin up, one rep"
     )
+    pullup_release: float = Field(
+        0.5,
+        ge=0,
+        description="Pull-ups: in a set, hands lower than this under the shoulders (torso lengths) end it "
+        "(miming without a bar, they come down to the chest)",
+    )
     min_visibility: float = Field(0.5, ge=0, le=1, description="Ignore landmarks MediaPipe isn't sure of")
     smooth_min_cutoff_hz: float = Field(
         0.0, ge=0, description="One Euro landmark filter: cutoff when still (Hz); 0 = no smoothing"

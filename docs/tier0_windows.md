@@ -78,7 +78,8 @@ Then the Tier 0 extras (profile `tier0`, virtual pad only):
   works, from the front or the side) with your whole body in view; a set starts once your
   hands are on the floor, and a rep counts when your shoulders sink toward your hands
   and come back up. Pull-ups: the camera must see your hands on the bar down to
-  your hips; a rep counts when your elbows bend with your chin up. While you're down or
+  your hips; a rep counts when your elbows bend with your chin up (no bar: reach straight
+  up, then pull your hands down to your chest). While you're down or
   hanging, and for 1.5 s after you're back up, the other gestures pause. The drill panel
   counts your reps.
 The YAML uses PlayStation button names; the Windows backend translates these to
@@ -99,7 +100,7 @@ Boxing sends Square (virtual Xbox X) on each detected punch.
 
 | Exercise | Set starts | Set ends (circle) | Camera |
 |---|---|---|---|
-| pull-ups | both hands up on the bar | let go of the bar | sees hands to hips |
+| pull-ups | both hands up on the bar (or straight overhead without one) | arms down to your sides | sees hands to hips |
 | push-ups | hands on the floor | stand up | side-on, low |
 | kettlebell | both hands together, low | hands apart | front |
 | squat | stand tall with feet shoulder-width apart, hands at shoulder height (bar on your back); the bar is lifted off the rack at once | hands down | front |

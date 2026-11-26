@@ -600,11 +600,12 @@ class WebcamGestures:
             self._body_px = max(torso_px, (self._body_px or 0.0) * (1 - wp.body_scale_decay * dt))
         floor = arm_px > 1e-6 and (wr[1] - hip[1]) / arm_px > wp.plank_hip
         hang = torso_px > 1e-6 and self._hanging(
-            # Once hanging, the hands only need to stay above the shoulders (they're close
-            # to them at the top of a pull-up).
+            # Once hanging, the hands may come down near the shoulders (top of a pull-up on
+            # a bar) or just under them (miming one: pulled down to the chest); arms
+            # dropped to your sides end the set.
             pose,
             torso_px,
-            0.0 if self.state.workout == "pullup" else wp.hang_reach,
+            -wp.pullup_release if self.state.workout == "pullup" else wp.hang_reach,
         )
         if self.state.workout != "pullup" and self.state.wheel_open:
             hang = False  # pointing up at the wheel's top slot, not grabbing a bar
