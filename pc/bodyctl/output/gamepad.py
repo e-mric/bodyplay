@@ -163,15 +163,91 @@ class VGamepadBackend:
         self._pad.update()
 
 
+class VGamepadDS4Backend:
+    """Virtual DualShock 4 through vgamepad + ViGEmBus (Windows only), for clients that
+    want a PlayStation pad. Not an XInput device, so it takes no XInput slot (`slot` is
+    None, `xinput` False).
+
+    It doesn't fix L2 + R2 together in Veyra 2.1.9 (2026-11-27): that client loses one of
+    two controls that change in the same poll (its chiaki feedback packet keeps only the
+    newest event), whatever the pad. Fixed in Veyra 2.2.0."""
+
+    xinput = False
+
+    def __init__(self) -> None:
+        import vgamepad as vg
+
+        self._pad = vg.VDS4Gamepad()
+        b, s, d = vg.DS4_BUTTONS, vg.DS4_SPECIAL_BUTTONS, vg.DS4_DPAD_DIRECTIONS
+        self._map = {
+            "cross": b.DS4_BUTTON_CROSS,
+            "circle": b.DS4_BUTTON_CIRCLE,
+            "square": b.DS4_BUTTON_SQUARE,
+            "triangle": b.DS4_BUTTON_TRIANGLE,
+            "l1": b.DS4_BUTTON_SHOULDER_LEFT,
+            "r1": b.DS4_BUTTON_SHOULDER_RIGHT,
+            "l3": b.DS4_BUTTON_THUMB_LEFT,
+            "r3": b.DS4_BUTTON_THUMB_RIGHT,
+            "options": b.DS4_BUTTON_OPTIONS,
+            "create": b.DS4_BUTTON_SHARE,
+        }
+        self._special = {"ps": s.DS4_SPECIAL_BUTTON_PS}
+        self._trigger_bits = (b.DS4_BUTTON_TRIGGER_LEFT, b.DS4_BUTTON_TRIGGER_RIGHT)
+        self._dpad = {
+            (0, 1): d.DS4_BUTTON_DPAD_NORTH, (1, 1): d.DS4_BUTTON_DPAD_NORTHEAST,
+            (1, 0): d.DS4_BUTTON_DPAD_EAST, (1, -1): d.DS4_BUTTON_DPAD_SOUTHEAST,
+            (0, -1): d.DS4_BUTTON_DPAD_SOUTH, (-1, -1): d.DS4_BUTTON_DPAD_SOUTHWEST,
+            (-1, 0): d.DS4_BUTTON_DPAD_WEST, (-1, 1): d.DS4_BUTTON_DPAD_NORTHWEST,
+            (0, 0): d.DS4_BUTTON_DPAD_NONE,
+        }  # fmt: skip
+        self.slot = None
+
+    def send(self, report: Report, now_us: int) -> None:
+        pad = self._pad
+        for name, btn in self._map.items():
+            if name in report.buttons:
+                pad.press_button(button=btn)
+            else:
+                pad.release_button(button=btn)
+        for name, btn in self._special.items():
+            if name in report.buttons:
+                pad.press_special_button(special_button=btn)
+            else:
+                pad.release_special_button(special_button=btn)
+        bt = report.buttons
+        dx = ("dpad_right" in bt) - ("dpad_left" in bt)
+        dy = ("dpad_up" in bt) - ("dpad_down" in bt)
+        pad.directional_pad(direction=self._dpad[(dx, dy)])
+        # DualShock 4 sticks: 0 is up (Report: + is up).
+        pad.left_joystick_float(x_value_float=report.left[0], y_value_float=-report.left[1])
+        pad.right_joystick_float(x_value_float=report.right[0], y_value_float=-report.right[1])
+        pad.left_trigger_float(value_float=report.l2)
+        pad.right_trigger_float(value_float=report.r2)
+        # A real DS4 also sets L2 / R2 digital bits while the trigger is pressed.
+        for value, bit in zip((report.l2, report.r2), self._trigger_bits, strict=True):
+            if value > 0:
+                pad.press_button(button=bit)
+            else:
+                pad.release_button(button=bit)
+        pad.update()
+
+    def close(self) -> None:
+        self._pad.reset()
+        self._pad.update()
+
+
 def open_backend(name: str | None, verbose: bool = False) -> Backend:
-    """`vgamepad` (default on Windows), `dry-run` (default elsewhere)."""
+    """`vgamepad` (Xbox 360, default on Windows), `vgamepad-ds4` (DualShock 4, for PS5
+    Remote Play clients), `dry-run` (default elsewhere)."""
     if name is None:
         name = "vgamepad" if sys.platform == "win32" else "dry-run"
     if name == "vgamepad":
         return VGamepadBackend()
+    if name == "vgamepad-ds4":
+        return VGamepadDS4Backend()
     if name == "dry-run":
         return DryRunBackend(verbose=verbose)
-    raise ValueError(f"unknown gamepad backend {name!r} (vgamepad, dry-run)")
+    raise ValueError(f"unknown gamepad backend {name!r} (vgamepad, vgamepad-ds4, dry-run)")
 
 
 def _clamp(v: float, lo: float = -1.0, hi: float = 1.0) -> float:
@@ -190,6 +266,8 @@ class Gamepad:
         self.report = Report()  # what the backend last got: the body, plus the real controller
         self.body = Report()  # the body's part alone (the marker and latency stats follow it)
         self.physical = None  # passthrough.PhysicalPad: your real controller, merged on top
+        self.merge_physical = True  # False: only watched (the game reads it itself, e.g. Veyra)
+        self.physical_used_us: int | None = None  # when it last had a button, stick or trigger on
         self.passthrough = None  # its polling thread, stopped on close
         self.changes = 0
         # The passthrough thread updates the pad between camera frames.
@@ -215,6 +293,9 @@ class Gamepad:
         """Your real controller's state (passthrough), sent on top of the body's."""
         with self._lock:
             self.physical = phys
+            if phys is not None and (phys.buttons or phys.left != (0.0, 0.0) or phys.right != (0.0, 0.0)
+                                     or phys.l2 > 0 or phys.r2 > 0):  # fmt: skip
+                self.physical_used_us = now_us
             self.update(now_us)
 
     def release_all(self, now_us: int) -> None:
@@ -245,7 +326,7 @@ class Gamepad:
             if body != self.body and _time_critical(self.body, body):
                 self.marker.pulse()  # the body's presses only: the latency rig measures those
             self.body = body
-            new = merge(body, self.physical)
+            new = merge(body, self.physical) if self.merge_physical else body
             if new != self.report:
                 self.report = new
                 self.changes += 1

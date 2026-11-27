@@ -48,3 +48,36 @@ def test_merge_without_a_real_controller_is_the_body():
     gp = Gamepad(DryRunBackend(), 30, 30)
     gp.update(0)
     assert merge(gp.body, None) is gp.body
+
+
+def test_the_body_waits_while_the_real_controller_is_used():
+    """Holding the controller (menus, walking to a gym station) can pass for a posture: a
+    controller held low looks like a deadlift bar. While it's in use the body sends
+    nothing; with passthrough off (Veyra reads the controller itself) it isn't merged."""
+    from test_workout import GTA6, swing_set
+
+    from bodyctl.config.profile import load_profile
+    from bodyctl.tier0 import Tier0
+
+    prof = load_profile(GTA6)
+    gp = Gamepad(DryRunBackend(), 30, 30)
+    gp.merge_physical = False
+    app = Tier0(prof, gp, clock=lambda: 0)
+    app.engine.set_mode("fitness", 0)
+    poses = swing_set(3).poses()
+    sent_while_used, sent_after = [], []
+    for p in poses:
+        app.clock = lambda p=p: p.t_us
+        t = p.t_us / 1e6
+        if t < 4.0:  # thumb on the stick for the first 4 s
+            gp.set_physical(PhysicalPad(left=(0.0, 0.6)), p.t_us)
+        elif gp.physical is not None and gp.physical.left != (0.0, 0.0):
+            gp.set_physical(PhysicalPad(), p.t_us)  # let go
+        app.step(p.t_us, p, t_pose_us=p.t_us)
+        r = gp.report
+        active = bool(r.buttons) or r.l2 > 0 or r.left != (0.0, 0.0)
+        (sent_while_used if t < 3.9 + prof.tier0.controller_yield_ms / 1000 else sent_after).append(
+            (t, active)
+        )
+    assert not [t for t, a in sent_while_used if a]  # nothing from the body, stick not merged
+    assert any(a for _, a in sent_after)  # the swings reach the game once the controller is down

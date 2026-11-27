@@ -36,6 +36,7 @@ class BindingEngine:
         self.gamepad = gamepad
         self.mode = mode
         self._last_pulse_us: dict[str, int] = {}
+        self._press, self._press_t_us = 0.0, None  # timed workout triggers: where they are now
 
     def set_mode(self, mode: str, now_us: int) -> None:
         if self.profile.mode_for(mode) is None:
@@ -43,6 +44,19 @@ class BindingEngine:
         if mode != self.mode:
             self.mode = mode
             self.gamepad.release_all(now_us)
+
+    def _timed_press(self, rising: bool, workout, now_us: int) -> float:
+        """Triggers going all the way down over trigger_rise_ms while you go up, and
+        easing off over trigger_fall_ms when you go down (as pressed by hand in GTA 6)."""
+        last, self._press_t_us = self._press_t_us, now_us
+        dt_ms = 0.0 if last is None else max(0.0, (now_us - last) / 1000)
+        if rising:
+            step = 1.0 if workout.trigger_rise_ms == 0 else dt_ms / workout.trigger_rise_ms
+            self._press = min(1.0, self._press + step)
+        else:
+            step = 1.0 if workout.trigger_fall_ms == 0 else dt_ms / workout.trigger_fall_ms
+            self._press = max(0.0, self._press - step)
+        return self._press
 
     def apply(self, state: State, events: Iterable[Event], now_us: int) -> None:
         names = [e.name for e in events]
@@ -90,8 +104,16 @@ class BindingEngine:
             if workout.style == "triggers":
                 if state.condition("working_out"):
                     # Overrides the ports' triggers during a set (nobody aims mid push-up).
+                    press = state.source("workout_press")
+                    if workout.trigger_press == "full":  # all the way from the start of the way up
+                        press = 1.0 if state.condition("workout_rising") else 0.0
+                    elif workout.trigger_press == "timed":  # the same, pressed and let up gradually,
+                        # and all the way down by the top however quick the rep
+                        timed = self._timed_press(state.condition("workout_rising"), workout, now_us)
+                        press = max(timed, press)
+                        self._press = press
                     for trigger in workout.triggers:
-                        gp.set_trigger(trigger, state.source("workout_press"))
+                        gp.set_trigger(trigger, press)
                     last = self._last_pulse_us.get("workout_struggle")
                     struggle = state.condition("workout_struggling") or (
                         workout.struggle_always and state.condition("lifting")
@@ -99,6 +121,8 @@ class BindingEngine:
                     if struggle and (last is None or now_us - last >= 1e6 / workout.struggle_hz):
                         self._last_pulse_us["workout_struggle"] = now_us
                         gp.press(workout.struggle_tap, now_us)
+                else:
+                    self._press, self._press_t_us = 0.0, None  # the next set starts released
                 last = self._last_pulse_us.get("workout_bag")
                 if state.condition("bag_hitting") and (last is None or now_us - last >= 1e6 / workout.bag_hz):
                     self._last_pulse_us["workout_bag"] = now_us

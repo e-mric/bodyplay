@@ -237,6 +237,12 @@ class WebcamParams(_Strict):
         gt=0,
         description="Squat: hands within this of shoulder height (bar on back); deadlift: not this over hips",
     )
+    bar_hands_hold: float = Field(
+        0.75,
+        gt=0,
+        description="Squat, in a set: hands within this of shoulder height keep it going (they sag "
+        "toward the chest); lower, down by your sides, ends it",
+    )
     squat_start_thigh: float = Field(
         0.45,
         gt=0,
@@ -318,6 +324,13 @@ class WebcamParams(_Strict):
     )
     rep_move_speed: float = Field(
         0.3, gt=0, description="Rep progress per second that counts as moving up or down (not pausing)"
+    )
+    rep_turn: float = Field(
+        0.35,
+        ge=0,
+        le=1,
+        description="Rep progress a move must cover from its highest (lowest) point to count as "
+        "going down (up): held at the top, pose jitter stays under it",
     )
     rep_struggle_speed: float = Field(
         0.25, gt=0, description="Rising slower than this (progress/s) partway up = struggling"
@@ -549,10 +562,22 @@ class Workout(_Strict):
     triggers: list[Literal["l2", "r2"]] = Field(
         default_factory=lambda: ["l2", "r2"], description="style triggers: pressed through each rep"
     )
+    trigger_press: Literal["ramp", "full", "timed"] = Field(
+        "ramp",
+        description="style triggers: ramp = pressed as far as the rep has come up; full = pressed all the "
+        "way from the start of the way up, held through the top, released going down; timed = like "
+        "full, but pressed down over trigger_rise_ms and let up over trigger_fall_ms",
+    )
+    trigger_rise_ms: int = Field(
+        500, ge=0, description="style triggers, timed: from released to all the way down (GTA 6: ~0.5 s)"
+    )
+    trigger_fall_ms: int = Field(
+        500, ge=0, description="style triggers, timed: from all the way down to released"
+    )
     struggle_tap: str = Field("cross", description="style triggers: mashed while a rep is stuck")
     struggle_always: bool = Field(
         False,
-        description="style triggers: mash struggle_tap through the whole set, from its start (GTA 6 only "
+        description="style triggers: mash struggle_tap from the set's first rep to its end (GTA 6 only "
         "asks for it when the character tires, and ignores it otherwise), instead of only on a stall",
     )
     struggle_hz: float = Field(8.0, gt=0, le=15, description="Mash rate (rule 8 caps presses at ~15 Hz)")
@@ -582,6 +607,12 @@ class Tier0Extras(_Strict):
     flight: Flight | None = None
     aim_nudge: AimNudge | None = None
     workout: Workout | None = None
+    controller_yield_ms: int = Field(
+        2000,
+        ge=0,
+        description="The body sends nothing while your real controller was used this recently "
+        "(menus, walking to a station); 0 = never yield",
+    )
 
 
 ALLOWED_KINDS = {

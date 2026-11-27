@@ -79,8 +79,9 @@ class Dashboard:
             title, style = recent[0][1].replace("_", " ").upper() + "!", "action"
         else:
             title, style = mode_name, "idle"
+        gym = bool(getattr(state, "exercise_name", ""))  # fitness, or paused from it
         sub = [f"MODE {mode_name}"] + ([] if state.visible else ["OUT OF VIEW"])
-        if mode == "fitness":
+        if gym:
             sub.append("EXERCISE " + (getattr(state, "exercise_name", "") or "ANY"))
         sub.append("m mode  e exercise  p pause  r reset  q quit")
         latency = [line.strip() for line in stats_text.splitlines() if line.startswith("frame->output")]
@@ -91,7 +92,7 @@ class Dashboard:
             pad=latency,
             report=report,
             pad_kind=self.pad_kind,
-            fitness=mode == "fitness",
+            fitness=gym,
         )
         out = V.render(frame, pose, title, "   ".join(sub), style, None, panel, hud)
         if self.flash_corner:

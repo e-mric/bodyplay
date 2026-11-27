@@ -116,8 +116,11 @@ class BodyState:
             "wheel_open": self.wheel_open,
             "flying": self.flying,
             "working_out": bool(self.workout),
-            "lifting": bool(self.workout) and self.workout != "bag",  # a set with reps
+            # A set with reps, once the first one is done: a posture held still (a controller
+            # at chest height passes for a squat bar) never gets that far.
+            "lifting": bool(self.workout) and self.workout != "bag" and self.workout_reps > 0,
             "workout_struggling": self.workout_struggling,
+            "workout_rising": bool(self.workout) and self.workout_rising,
             "bag_hitting": self.bag_hitting,
             "exit_after_set": self.last_workout != "bag",
         }.get(name, False)
@@ -241,6 +244,7 @@ class WebcamGestures:
         self._bag_rest_since_us: list[int | None] = [None, None]
         self._bag_fast_frames = [0, 0]
         self._rep_speed = 0.0  # rep progress per second, smoothed (+ = going up)
+        self._rep_peak, self._rep_trough = 0.0, 1.0  # highest since going up, lowest since down
         self._stuck_since_us: int | None = None
         self._settling = False  # getting back up after a set: standing gestures wait
         self._settle_since_us = 0
@@ -399,7 +403,9 @@ class WebcamGestures:
             tall_enough = self.state.workout == "squat" or (
                 thigh is not None and thigh >= wp.squat_start_thigh
             )
-            return "squat" if abs(hands_up) < wp.bar_hands and tall_enough else None
+            # In a set the hands may sag toward the chest; down by your sides ends it.
+            limit = wp.bar_hands_hold if self.state.workout == "squat" else wp.bar_hands
+            return "squat" if abs(hands_up) < limit and tall_enough else None
         if ex == "deadlift":
             low = float(wr[1] - hip[1]) / torso_px > -wp.bar_hands  # hands not raised above the hips
             return "deadlift" if low else None
@@ -706,8 +712,14 @@ class WebcamGestures:
                 self._rep_phase(t, progress)
         elif self.state.workout == "bag" and kind == "bag":
             self._bag(pose, torso_px, events)
-        elif self.state.workout:  # out of the posture (letting go of the bar): nothing is pressed
-            self.state.workout_rising = self.state.workout_struggling = False
+        elif self.state.workout:
+            # Out of the posture. A bar held up (squat, bench) keeps its press through a
+            # flicker: held at the top it would never be pressed again; if you really left,
+            # the set ends after workout_release_ms and that releases it. Anything else (you
+            # let go of the bar) releases at once.
+            if self.state.workout not in TOP_START:
+                self.state.workout_rising = False
+            self.state.workout_struggling = False
             self._rep_last = None
         return busy or kind is not None
 
@@ -727,10 +739,16 @@ class WebcamGestures:
             return
         speed = (progress - last[1]) / ((t_us - last[0]) / 1e6)
         self._rep_speed += 0.4 * (speed - self._rep_speed)  # progress/s, smoothed
-        if self._rep_speed > wp.rep_move_speed:
-            st.workout_rising = True
-        elif self._rep_speed < -wp.rep_move_speed:
-            st.workout_rising = False  # going down: let go
+        # Turning around takes a clear move from the turning point, not just a dip in
+        # speed: held at the top, the pose jitters a few percent and would flicker the press.
+        if st.workout_rising:
+            self._rep_peak = max(self._rep_peak, progress)
+            if self._rep_speed < -wp.rep_move_speed and progress < self._rep_peak - wp.rep_turn:
+                st.workout_rising, self._rep_trough = False, progress  # going down: let go
+        else:
+            self._rep_trough = min(self._rep_trough, progress)
+            if self._rep_speed > wp.rep_move_speed and progress > self._rep_trough + wp.rep_turn:
+                st.workout_rising, self._rep_peak = True, progress
         # Stuck = pressing partway up and barely moving (a pause at the top isn't a struggle).
         stuck = (
             st.workout_rising
@@ -790,6 +808,7 @@ class WebcamGestures:
 
     def _end_rep_phase(self) -> None:
         self._rep_last, self._rep_speed, self._stuck_since_us = None, 0.0, None
+        self._rep_peak, self._rep_trough = 0.0, 1.0
         st = self.state
         st.workout_progress, st.workout_rising, st.workout_struggling = 0.0, False, False
 

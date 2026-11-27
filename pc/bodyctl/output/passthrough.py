@@ -118,7 +118,7 @@ class Passthrough:
     """Polls the first real controller (any XInput slot but the virtual pad's) and
     feeds it to `gamepad.set_physical`."""
 
-    def __init__(self, gamepad, virtual_slot: int, xinput: XInput | None = None):
+    def __init__(self, gamepad, virtual_slot: int | None, xinput: XInput | None = None):
         self.gamepad = gamepad
         self.virtual_slot = virtual_slot
         self.xinput = xinput or XInput()

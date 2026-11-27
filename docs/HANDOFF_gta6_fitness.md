@@ -40,7 +40,7 @@ From the user's gameplay videos and `config/profiles/gta6.yaml`, mode `fitness`:
 
 - **Reps:** L2 + R2 are held and pressed harder on the way up, held at the top, released
   to go down, and pressed again from the bottom.
-- **Struggling:** X is mashed through the whole set (2026-11-27), so it's there when the
+- **Struggling:** X is mashed from the first rep to the end of the set (2026-11-27), so it's there when the
   character tires near the end; the game ignores it before.
 - **Ending a set:** circle ends the set (puts the weight down). The punching bag is the
   exception: it has no circle.

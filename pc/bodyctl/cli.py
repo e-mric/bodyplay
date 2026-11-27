@@ -97,7 +97,9 @@ def cmd_webcam(args: argparse.Namespace) -> int:
     backend = open_backend(args.backend, verbose=args.verbose)
     gamepad = Gamepad(backend, prof.press.hold_ms, prof.press.release_ms, open_marker(args.marker_port))
     print(f"profile {Path(profile).as_posix()}, gamepad backend {type(backend).__name__}")
-    if hasattr(backend, "slot"):
+    if not getattr(backend, "xinput", True):  # a DualShock 4: every XInput slot is a real pad
+        _start_passthrough(gamepad, None, args.passthrough)
+    elif hasattr(backend, "slot"):
         if backend.slot is None:  # without it, passthrough could read the virtual pad back
             print("virtual pad slot unknown: real controller passthrough off")
         else:
@@ -128,7 +130,21 @@ def cmd_screen_record(args: argparse.Namespace) -> int:
     return 0
 
 
-def _start_passthrough(gamepad, slot: int, enabled: bool) -> None:
+def cmd_trigger_test(args: argparse.Namespace) -> int:
+    from bodyctl.tools.trigger_test import run
+
+    run(args.backend)
+    return 0
+
+
+def cmd_pad_record(args: argparse.Namespace) -> int:
+    from bodyctl.tools.pad_record import record
+
+    record(args.out, args.seconds, None if args.slot is None else args.slot - 1)
+    return 0
+
+
+def _start_passthrough(gamepad, slot: int | None, enabled: bool) -> None:
     """Merge your real controller into the virtual pad, and say where each one sits."""
     from bodyctl.output.passthrough import Passthrough
 
@@ -136,20 +152,23 @@ def _start_passthrough(gamepad, slot: int, enabled: bool) -> None:
         pt = Passthrough(gamepad, slot)
         real = pt.real_slots()
     except OSError as e:
-        print(f"virtual pad in controller slot {slot + 1}; no passthrough ({e})")
+        print(f"no real controller passthrough ({e})")
         return
-    print(
-        f"virtual pad in controller slot {slot + 1}"
-        + (f", real controller in slot {real[0] + 1}" if real else "")
-    )
-    if slot != 0:
+    where = "virtual pad is a DualShock 4" if slot is None else f"virtual pad in controller slot {slot + 1}"
+    print(where + (f", real controller in slot {real[0] + 1}" if real else ""))
+    if slot is not None and slot != 0:
         print(
             "  games that read one controller (GTA V) use slot 1, the real one: turn it off, restart"
             " this, then turn it back on to use both"
         )
+    # Always watched: while you use it, the body waits. Merged only with passthrough on (a
+    # Remote Play client such as Veyra reads it itself).
+    gamepad.merge_physical = enabled
+    gamepad.passthrough = pt.start()
     if enabled:
-        gamepad.passthrough = pt.start()
         print("  real controller passthrough on: it works alongside the body (--no-passthrough to stop)")
+    if real:
+        print("  while you use the real controller, the body sends nothing")
 
 
 def cmd_webcam_drill(args: argparse.Namespace) -> int:
@@ -557,9 +576,10 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--pose", choices=["auto", "mediapipe", "rtmpose"], default="auto", help=pose_help)
     sp.add_argument(
         "--backend",
-        choices=["vgamepad", "dry-run"],
+        choices=["vgamepad", "vgamepad-ds4", "dry-run"],
         default=None,
-        help="virtual pad (default: vgamepad on Windows, dry-run elsewhere)",
+        help="virtual pad: vgamepad = Xbox 360 (default on Windows), vgamepad-ds4 = DualShock 4 (PS5 "
+        "Remote Play: L2 + R2 together), dry-run (default elsewhere)",
     )
     sp.add_argument("--camera", type=int, default=0, help="camera index")
     sp.add_argument("--size", default="640x480", help="capture size WxH")
@@ -648,6 +668,22 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--fps", type=float, default=20.0)
     sp.add_argument("--width", type=int, default=1280, help="video width (height keeps the shape)")
     sp.add_argument("--stop-file", help="stop as soon as this file exists")
+
+    sp = add(
+        "trigger-test",
+        "press the virtual pad's L2 + R2 through a fixed sequence (no camera) to check the game",
+        cmd_trigger_test,
+    )
+    sp.add_argument("--backend", default="vgamepad-ds4", choices=["vgamepad", "vgamepad-ds4", "dry-run"])
+
+    sp = add(
+        "pad-record",
+        "record your real controller (buttons, trigger pressure, sticks) to a CSV (Windows)",
+        cmd_pad_record,
+    )
+    sp.add_argument("--out", default="data/pad/controller", help="output path (.csv)")
+    sp.add_argument("--seconds", type=float, default=600.0, help="stop after this long")
+    sp.add_argument("--slot", type=int, help="controller slot 1-4 (default: every connected one)")
 
     sp = add("webcam-tune", "Tier 0: tune gesture thresholds on drill recordings", cmd_webcam_tune)
     sp.add_argument("recordings", nargs="*", help="drill .npz files (default: all in data/drills)")

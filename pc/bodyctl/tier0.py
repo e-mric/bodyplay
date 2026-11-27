@@ -45,10 +45,17 @@ class Tier0:
 
     def step(self, t_capture_us: int, pose: Pose | None, t_pose_us: int | None = None) -> FrameResult:
         t_pose_us = t_pose_us if t_pose_us is not None else self.clock()
-        self.gestures.fitness = self.mode == "fitness"
+        # Paused from the gym, the body stays a gym body (no running, leaning or jumping).
+        self.gestures.fitness = self.gym
         events = self.gestures.update(pose, t_capture_us)
         t_gesture = self.clock()
-        self.engine.apply(self.gestures.state, events, t_gesture)
+        if self.controller_in_use(t_gesture):
+            # Hands on the real controller (menus, walking to a station): the body waits,
+            # so a posture it misreads (a controller held low passes for a bar) sends nothing.
+            self.gamepad.release_all(t_gesture)
+            self.gamepad.update(t_gesture)
+        else:
+            self.engine.apply(self.gestures.state, events, t_gesture)
         t_out = self.clock()
         self.stats.add("capture->pose", t_pose_us - t_capture_us)
         self.stats.add("pose->gesture", t_gesture - t_pose_us)
@@ -56,9 +63,18 @@ class Tier0:
         self.stats.add("frame->output", t_out - t_capture_us)
         return FrameResult(t_capture_us, pose, events)
 
+    def controller_in_use(self, now_us: int) -> bool:
+        used, yield_ms = self.gamepad.physical_used_us, self.profile.tier0.controller_yield_ms
+        return used is not None and yield_ms > 0 and now_us - used < yield_ms * 1000
+
     @property
     def mode(self) -> str:
         return self.engine.mode
+
+    @property
+    def gym(self) -> bool:
+        """Fitness mode, or paused from it."""
+        return self.mode == "fitness" or (self.mode == "paused" and self._paused_from == "fitness")
 
     def cycle_mode(self) -> None:
         modes = [m for m in MODE_CYCLE if self.profile.mode_for(m) is not None]

@@ -241,27 +241,42 @@ def test_mimed_pullups_pausing_at_the_chest_stay_one_set():
     assert names.count("workout_start") == 1 and names.count("workout_end") == 1
 
 
+def gradual(values: list[float]) -> bool:
+    """A press that starts partway and climbs all the way down (GTA 6's L2 + R2, by hand)."""
+    return bool(values) and values[0] < 0.5 and max(values) == 1.0 and values[1] > values[0]
+
+
+def press_times(rows) -> list[float]:
+    return [t for (_, a, _), (t, b, _) in zip(rows, rows[1:], strict=False) if b.l2 >= 0.5 > a.l2]
+
+
+def release_times(rows) -> list[float]:
+    return [t for (_, a, _), (t, b, _) in zip(rows, rows[1:], strict=False) if a.l2 >= 0.5 > b.l2]
+
+
 def test_gta6_pullups_press_up_hold_at_the_top_release_going_down():
     rows = fitness_reports(pullup_set(3))
     pressed = [(t, r, p) for t, r, p in rows if r.l2 > 0]
     assert pressed and all(r.l2 == r.r2 for _, r, _ in pressed)  # both triggers together
-    assert all(abs(r.l2 - p) < 1e-6 for _, r, p in pressed)  # pressure = how far up the rep
+    assert gradual([r.l2 for _, r, _ in pressed])  # GTA 6: pressed down over ~0.5 s, as by hand
     tops = [r for _, r, p in rows if p >= 1.0]
     assert tops and all(r.l2 == 1.0 for r in tops)  # held at the top (the game shows DESCENDRE)
     # Released only while going down: every pressed->released edge happens below the top.
     releases = [p for (_, a, _), (_, b, p) in zip(rows, rows[1:], strict=False) if a.l2 > 0 and b.l2 == 0]
     assert releases and all(p < 1.0 for p in releases)
-    # Pressed again from the bottom for every rep: one real press (past half pressure) per rep.
-    starts = sum(1 for (_, a, _), (_, b, _) in zip(rows, rows[1:], strict=False) if b.l2 >= 0.5 > a.l2)
-    assert starts == 3
+    # Pressed again from the bottom for every rep: one held press per rep. Coming down off
+    # the bar at the end bends the elbows for a blink (the dismount, a known extra).
+    held = [t1 - t0 for t0, t1 in zip(press_times(rows), release_times(rows), strict=False) if t1 - t0 >= 0.2]
+    assert len(held) == 3
     circles = [t for (_, a, _), (t, b, _) in zip(rows, rows[1:], strict=False)
                if "circle" in b.buttons and "circle" not in a.buttons]  # fmt: skip
     assert len(circles) == 1  # let go of the bar once, at the end (RELACHER)
-    # X is mashed through the whole set, ready for when the character tires at the end
-    # (the game ignores it before), and stops when the set does.
+    # X is mashed from the first rep to the end of the set, ready for when the character
+    # tires at the end (the game ignores it before), and stops when the set does.
     crosses = [t for (_, a, _), (t, b, _) in zip(rows, rows[1:], strict=False)
                if "cross" in b.buttons and "cross" not in a.buttons]  # fmt: skip
-    assert len(crosses) > 20 and crosses[0] < 2.5 and crosses[-1] < circles[0]
+    first_rep = next(t for t, r, p in rows if p >= 1.0)
+    assert len(crosses) > 10 and first_rep <= crosses[0] < first_rep + 0.5 and crosses[-1] < circles[0]
 
 
 def test_gta6_stuck_rep_mashes_x():
@@ -278,7 +293,7 @@ def test_gta6_stuck_rep_mashes_x():
         1 for a, b in zip(stuck, stuck[1:], strict=False) if "cross" in b.buttons and "cross" not in a.buttons
     )
     assert presses >= 5  # mashing at ~8 Hz
-    assert all(0.2 < r.l2 < 0.8 for r in stuck)  # still holding the triggers where the rep is
+    assert all(r.l2 == 1.0 for r in stuck)  # still holding the triggers
 
 
 def test_gta5_workout_still_taps():
@@ -314,7 +329,7 @@ def test_kettlebell_swings_count_only_in_fitness_mode():
     assert not {"workout_start", "kettlebell"} & {n for n, _ in events}
     rows = fitness_reports(f)
     pressed = [(r, p) for _, r, p in rows if r.l2 > 0]
-    assert pressed and all(abs(r.l2 - p) < 1e-6 for r, p in pressed)  # pressure = hand height
+    assert pressed and gradual([r.l2 for r, _ in pressed])  # down over ~0.5 s, to the end (GTA 6)
     starts = sum(1 for (_, a, _), (_, b, _) in zip(rows, rows[1:], strict=False) if b.l2 >= 0.5 > a.l2)
     assert starts == 3  # one swing up per rep (SOULEVER), held at the top, released going down
     circles = sum(1 for (_, a, _), (_, b, _) in zip(rows, rows[1:], strict=False)
@@ -434,7 +449,7 @@ def test_gta6_deadlifts_press_on_the_way_up():
     assert presses(rows) == 3
     assert edges(rows, "circle") == 1
     pressed = [(r, p) for _, r, p in rows if r.l2 > 0]
-    assert all(abs(r.l2 - p) < 1e-6 for r, p in pressed)
+    assert gradual([r.l2 for r, _ in pressed])
 
 
 def bench_pose(h: float) -> np.ndarray:
@@ -562,6 +577,7 @@ def test_gta6_kettlebell_on_real_recordings():
         app.gestures.exercise = "kettlebell"
         names, l2, circles, circle = [], [], 0, False
         for t, p in zip(rec.t_us, rec.poses(), strict=True):
+            app.clock = lambda t=t: int(t)  # the triggers press down over time
             names += [e.name for e in app.step(int(t), p, t_pose_us=int(t)).events]
             r = app.gamepad.report
             l2.append(r.l2)
